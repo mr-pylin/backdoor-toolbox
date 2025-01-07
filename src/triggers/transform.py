@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 
 import torch
 from torchvision.transforms import v2
@@ -150,6 +151,10 @@ class InjectSolidTrigger(InjectTrigger):
         trigger[:, pos_y : pos_y + size_y, pos_x : pos_x + size_x] = self.color[:, torch.newaxis, torch.newaxis]
 
         return trigger
+
+
+class TriggerTypes(Enum):
+    SOLID = InjectSolidTrigger
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
-import torch
+from enum import Enum
+
 import numpy as np
+import torch
 from torchvision.transforms import v2
 
 
@@ -21,6 +23,10 @@ class LabelFlip:
 
     def __repr__(self):
         return f"{self.__class__.__name__}(target_label={self.target_index})"
+
+
+class TargetTriggerTypes(Enum):
+    FLIPLABEL = LabelFlip
 
 
 if __name__ == "__main__":

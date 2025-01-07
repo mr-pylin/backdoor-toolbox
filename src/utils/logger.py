@@ -16,12 +16,12 @@ class Logger:
 
     Args:
         root (Path): The base directory where all logs will be saved.
-        append_data (bool): Whether to append to existing files or create new ones. Default is True.
+        include_date (bool): Whether to append to existing files or create new ones. Default is True.
         verbose (bool): Whether to print detailed information about the saving process. Default is True.
     """
 
-    def __init__(self, root: Path, append_data: bool = True, verbose: bool = True):
-        if append_data:
+    def __init__(self, root: Path, include_date: bool = True, verbose: bool = True):
+        if include_date:
             self.root = Path(f"{root}_{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
         else:
             self.root = root
@@ -31,15 +31,6 @@ class Logger:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def save_metrics(self, path: Path, filename: str, **data):
-        """
-        Initializes the Logger with a root directory and optional flags for
-        appending data and verbosity.
-
-        Args:
-            root (Path): The base directory where all logs will be saved.
-            append_data (bool): Whether to append to existing files or create new ones. Default is True.
-            verbose (bool): Whether to print detailed information about the saving process. Default is True.
-        """
 
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -192,7 +183,7 @@ if __name__ == "__main__":
     from torch import nn, optim
 
     log_dir = Path("../../logs/temp")
-    logger = Logger(log_dir, append_data=True, verbose=True)
+    logger = Logger(log_dir, include_date=True, verbose=True)
 
     # save metrics in csv file
     metrics_1 = {
