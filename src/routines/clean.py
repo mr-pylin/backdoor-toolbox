@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Dataset, random_split
 from torchmetrics.classification import MulticlassAccuracy, MulticlassConfusionMatrix
 from torchvision import models  # do not remove this line
 
@@ -36,6 +36,9 @@ class CleanRoutine:
         torch.manual_seed(self.seed)
 
         # future attributes
+        self.trainset: Dataset
+        self.valset: Dataset
+        self.testset: Dataset
         self.train_loader: DataLoader
         self.val_loader: DataLoader
         self.test_loader: DataLoader
@@ -70,7 +73,7 @@ class CleanRoutine:
         dataset_cls = getattr(self.__import_package(module_path), module_cls)
 
         # initialize train and validation set
-        trainset = dataset_cls(
+        self.trainset = dataset_cls(
             root=self.config["dataset"]["root"],
             train=self.config["dataset"]["train"],
             image_transform=self.config["dataset"]["transform"],
@@ -80,10 +83,10 @@ class CleanRoutine:
         )
 
         # split train set into train and validation set
-        trainset, valset = random_split(trainset, self.config["train"]["train_val_ratio"])
+        self.trainset, self.valset = random_split(self.trainset, self.config["train"]["train_val_ratio"])
 
         # initialize test set
-        testset = dataset_cls(
+        self.testset = dataset_cls(
             root=self.config["dataset"]["root"],
             train=not self.config["dataset"]["train"],
             image_transform=self.config["dataset"]["transform"],
@@ -99,9 +102,9 @@ class CleanRoutine:
             self.config["test"]["test_batch_size"],
         )
 
-        train_loader = DataLoader(trainset, batch_size=train_bs, shuffle=True)
-        val_loader = DataLoader(valset, batch_size=val_bs, shuffle=False)
-        test_loader = DataLoader(testset, batch_size=test_bs, shuffle=False)
+        train_loader = DataLoader(self.trainset, batch_size=train_bs, shuffle=True)
+        val_loader = DataLoader(self.valset, batch_size=val_bs, shuffle=False)
+        test_loader = DataLoader(self.testset, batch_size=test_bs, shuffle=False)
 
         return train_loader, val_loader, test_loader
 
@@ -245,6 +248,28 @@ class CleanRoutine:
                 **data,
             )
 
+        self.logger.save_demo(
+            Path(self.config["log"]["demo"]["train_path"]),
+            "train",
+            self.model,
+            self.trainset,
+            self.config["log"]["demo"]["nrows"],
+            self.config["log"]["demo"]["ncols"],
+            show=self.config["log"]["demo"]["show"],
+            device=self.device,
+        )
+
+        self.logger.save_demo(
+            Path(self.config["log"]["demo"]["train_path"]),
+            "validation",
+            self.model,
+            self.valset,
+            self.config["log"]["demo"]["nrows"],
+            self.config["log"]["demo"]["ncols"],
+            show=self.config["log"]["demo"]["show"],
+            device=self.device,
+        )
+
     def __test(self):
         true_labels = []
         predictions = []
@@ -297,4 +322,15 @@ class CleanRoutine:
             self.config["log"]["confusion_matrix"]["filename"],
             cm,
             list(range(self.num_classes)),
+        )
+
+        self.logger.save_demo(
+            Path(self.config["log"]["demo"]["test_path"]),
+            "test",
+            self.model,
+            self.testset,
+            self.config["log"]["demo"]["nrows"],
+            self.config["log"]["demo"]["ncols"],
+            show=self.config["log"]["demo"]["show"],
+            device=self.device,
         )

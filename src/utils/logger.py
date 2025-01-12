@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import nn
+from torch.utils.data import DataLoader
 
 
 class Logger:
@@ -177,6 +178,38 @@ class Logger:
 
         if self.verbose:
             print(f"[Logger]: Model weights saved to {save_path}")
+
+    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device):
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{filename}.png"
+
+        data = next(iter(DataLoader(dataset, batch_size=nrows * ncols, shuffle=False)))
+
+        labels = data[1].to("cpu")
+        model.to(device)
+
+        model.eval()
+        with torch.no_grad():
+            predictions = model(data[0].to(device)).argmax(dim=1).cpu()
+
+        # plot
+        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols, nrows), layout="compressed")
+        plt.suptitle(f"First {nrows * ncols} images of {filename}")
+        for i in range(nrows):
+            for j in range(ncols):
+                axs[i, j].imshow(data[0][i * ncols + j].permute(1, 2, 0), cmap="gray")
+                axs[i, j].set_title(f"t:{labels[i * ncols + j].item()},p:{predictions[i * ncols + j].item()}")
+                axs[i, j].axis("off")
+
+        # save the plot
+        plt.savefig(save_path, format="png", bbox_inches="tight")
+
+        if show:
+            plt.show()
+
+        if self.verbose:
+            print(f"[Logger]: Demo saved to {save_path}")
 
 
 if __name__ == "__main__":
