@@ -139,28 +139,28 @@ class PoisonedMNIST(MNIST):
 
         if self.skip_target_samples:
             index = self.victim_samples_index[index]
-            image, label = super().__getitem__(index)
-        else:
-            image, label = super().__getitem__(index)
+
+        image, label = super().__getitem__(index)
 
         # determine if the sample is poisoned or clean
         is_poisoned = index in self.poisoned_samples_index
+        raw_label = label
 
         # apply clean_transforms to clean samples and poisoned_transforms to poisoned samples
         if is_poisoned:
-            clean_mask, poison_mask = False, True
+            poison_mask = True
             if self.poisoned_transform is not None:
                 image = self.poisoned_transform(image)
             if self.poisoned_target_transform is not None:
                 label = self.poisoned_target_transform(label)
         else:
-            clean_mask, poison_mask = True, False
+            poison_mask = False
             if self.clean_transform is not None:
                 image = self.clean_transform(image)
             if self.clean_target_transform is not None:
                 label = self.clean_target_transform(label)
 
-        return image, label, clean_mask, poison_mask
+        return image, label, poison_mask, raw_label
 
     # override `raw_folder` to correct the MNIST path
     @property
@@ -271,7 +271,9 @@ if __name__ == "__main__":
     for i in range(NROWS):
         for j in range(NCOLS):
             axs[i, j].imshow(poisoned_mnist_dl_1[0][i * NCOLS + j].permute(1, 2, 0), cmap="gray")
-            axs[i, j].set_title(f"{poisoned_mnist_dl_1[1][i * NCOLS + j].item()} ({poisoned_mnist_dl_1[3][i * NCOLS + j].item()})")
+            axs[i, j].set_title(
+                f"{poisoned_mnist_dl_1[1][i * NCOLS + j].item()}, {poisoned_mnist_dl_1[3][i * NCOLS + j].item()}, {str(poisoned_mnist_dl_1[2][i * NCOLS + j].item())[0]}"
+            )
             axs[i, j].axis("off")
 
     fig, axs = plt.subplots(NROWS, NCOLS, figsize=(NCOLS, NROWS), layout="compressed")
@@ -279,7 +281,9 @@ if __name__ == "__main__":
     for i in range(NROWS):
         for j in range(NCOLS):
             axs[i, j].imshow(poisoned_mnist_dl_2[0][i * NCOLS + j].permute(1, 2, 0), cmap="gray")
-            axs[i, j].set_title(f"{poisoned_mnist_dl_2[1][i * NCOLS + j].item()} ({poisoned_mnist_dl_2[3][i * NCOLS + j].item()})")
+            axs[i, j].set_title(
+                f"{poisoned_mnist_dl_2[1][i * NCOLS + j].item()}, {poisoned_mnist_dl_2[3][i * NCOLS + j].item()}, {str(poisoned_mnist_dl_2[2][i * NCOLS + j].item())[0]}"
+            )
             axs[i, j].axis("off")
 
     fig, axs = plt.subplots(NROWS, NCOLS, figsize=(NCOLS, NROWS), layout="compressed")
