@@ -7,35 +7,45 @@ from torchvision.transforms import v2
 
 class InjectTrigger(ABC):
     """
-    Abstract base class for injecting triggers into images.
+    Abstract base class for injecting triggers into images in backdoor attacks.
 
-    Args:
-        image_shape (tuple[int, int, int]): Shape of the input image (channels, height, width).
+    Attributes:
+        image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
     """
 
     def __init__(self, image_shape: tuple[int, int, int]):
+        """
+        Initializes the InjectTrigger class.
+
+        Args:
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
+        """
         super().__init__()
         self.image_shape = image_shape
 
-    @staticmethod
     @abstractmethod
-    def generate_mask(self) -> torch.Tensor:
+    def _generate_mask(self) -> torch.Tensor:
         """
-        Abstract method to generate a binary mask indicating the location of the trigger.
+        Abstract method to generate a binary mask for the trigger region.
+
+        Args:
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
 
         Returns:
-            torch.Tensor: A tensor of the same shape as the image, with 1s in the trigger region and 0s elsewhere.
+            torch.Tensor: Binary mask of the same shape as the image.
         """
         pass
 
-    @staticmethod
     @abstractmethod
-    def generate_trigger(self) -> torch.Tensor:
+    def _generate_trigger(self) -> torch.Tensor:
         """
         Abstract method to generate the trigger pattern.
 
+        Args:
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
+
         Returns:
-            torch.Tensor: A tensor representing the trigger pattern.
+            torch.Tensor: Trigger pattern of the same shape as the image.
         """
         pass
 
@@ -44,29 +54,24 @@ class InjectTrigger(ABC):
         Applies the trigger to the input image.
 
         Args:
-            image (torch.Tensor): The input image tensor.
+            image (torch.Tensor): Input image tensor of shape (C, H, W).
 
         Returns:
-            torch.Tensor: The image with the trigger injected.
+            torch.Tensor: Image tensor with the trigger applied.
         """
-
-        mask = self.generate_mask(self.image_shape)
-        trigger = self.generate_trigger(self.image_shape)
+        mask = self._generate_mask(self.image_shape)
+        trigger = self._generate_trigger(self.image_shape)
         return (1 - mask) * image + mask * trigger
 
 
 class InjectSolidTrigger(InjectTrigger):
     """
-    A class for injecting a solid rectangular trigger into images.
+    Class for injecting a solid-colored trigger into an image.
 
-    Args:
-        image_shape (tuple[int, int, int]): Shape of the input image (channels, height, width).
-        color (tuple[float, ...]): RGB/monochrome color values for the trigger. Default is (1.0,).
-        size (tuple[int, int]): Size of the trigger as (height, width). Default is (6, 6).
-        position (tuple[int, int]): Top-left corner of the trigger as (x, y) coordinates. Default is (0, 0).
-
-    Raises:
-        ValueError: If `color`, `size`, or `position` are incorrectly specified.
+    Attributes:
+        color (torch.Tensor): Color of the trigger (tuple of floats, one for each channel).
+        size (tuple[int, int]): Size of the trigger (width, height).
+        position (tuple[int, int]): Position of the top-left corner of the trigger (x, y).
     """
 
     def __init__(
@@ -76,7 +81,18 @@ class InjectSolidTrigger(InjectTrigger):
         size: tuple[int, int] = (6, 6),
         position: tuple[int, int] = (0, 0),
     ):
+        """
+        Initializes the InjectSolidTrigger class.
 
+        Args:
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
+            color (tuple[float, ...]): Color of the trigger, one value per channel. Defaults to (1.0,).
+            size (tuple[int, int]): Size of the trigger (width, height). Defaults to (6, 6).
+            position (tuple[int, int]): Position of the trigger (x, y). Defaults to (0, 0).
+
+        Raises:
+            ValueError: If the color, size, or position parameters are invalid.
+        """
         super().__init__(image_shape)
         self.color = torch.tensor(color, dtype=torch.float32)
         self.size = size
@@ -92,20 +108,19 @@ class InjectSolidTrigger(InjectTrigger):
         if len(self.position) != 2:
             raise ValueError("Position must be a tuple of 2 elements (x, y) [depth is inferred].")
 
-    def generate_mask(self, image_shape: tuple[int, int, int]) -> torch.Tensor:
+    def _generate_mask(self, image_shape: tuple[int, int, int]) -> torch.Tensor:
         """
-        Generates a binary mask indicating the trigger region in the image.
+        Generates a binary mask for the solid trigger region.
 
         Args:
-            image_shape (tuple[int, int, int]): Shape of the input image (channels, height, width).
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
 
         Returns:
-            torch.Tensor: A tensor of shape (C, H, W) with 1s in the trigger region and 0s elsewhere.
+            torch.Tensor: Binary mask of the same shape as the input image.
 
         Raises:
-            ValueError: If the input image shape is invalid or doesn't match the trigger's color channels.
+            ValueError: If the input image shape is invalid.
         """
-
         if len(image_shape) != 3:
             raise ValueError(f"Input image must have 3 dimensions (C, H, W), but got {len(image_shape)} dimensions.")
         if image_shape[0] != len(self.color):
@@ -123,20 +138,19 @@ class InjectSolidTrigger(InjectTrigger):
 
         return mask
 
-    def generate_trigger(self, image_shape: tuple[int, int, int]) -> torch.Tensor:
+    def _generate_trigger(self, image_shape: tuple[int, int, int]) -> torch.Tensor:
         """
-        Generates the trigger pattern based on the specified color, size, and position.
+        Generates the solid trigger pattern.
 
         Args:
-            image_shape (tuple[int, int, int]): Shape of the input image (channels, height, width).
+            image_shape (tuple[int, int, int]): Shape of the input image (C, H, W).
 
         Returns:
-            torch.Tensor: A tensor of shape (C, H, W) representing the trigger.
+            torch.Tensor: Trigger pattern of the same shape as the input image.
 
         Raises:
             ValueError: If the input image shape is invalid.
         """
-
         if len(image_shape) != 3:
             raise ValueError(f"Input image must have 3 dimensions (C, H, W), but got {len(image_shape)} dimensions.")
 
@@ -154,6 +168,10 @@ class InjectSolidTrigger(InjectTrigger):
 
 
 class TriggerTypes(Enum):
+    """
+    Enum for different trigger types used in backdoor attacks.
+    """
+
     SOLID = InjectSolidTrigger
 
 
@@ -167,8 +185,8 @@ if __name__ == "__main__":
     rgb_image = torch.rand(size=RGB_IMAGE_SIZE)
 
     # create solid trigger transforms
-    grayscale_solid_trigger = InjectSolidTrigger(image_shape=grayscale_image.shape, color=(0.0,), size=(6, 6), position=(20, 20))
-    rgb_solid_trigger = InjectSolidTrigger(image_shape=rgb_image.shape, color=(1.0, 1.0, 1.0), size=(6, 6), position=(24, 24))
+    grayscale_solid_trigger = TriggerTypes.SOLID.value(image_shape=grayscale_image.shape, color=(0.0,), size=(6, 6), position=(20, 20))
+    rgb_solid_trigger = TriggerTypes.SOLID.value(image_shape=rgb_image.shape, color=(1.0, 1.0, 1.0), size=(6, 6), position=(24, 24))
 
     # compose transforms
     grayscale_transform = v2.Compose([grayscale_solid_trigger])

@@ -7,65 +7,77 @@ from torchvision.transforms import v2
 
 class CleanMNIST(MNIST):
     """
-    A subclass of the MNIST dataset that ensures consistent seeding and converts targets to a `torch.Tensor`.
-
-    Args:
-        root (str): Root directory where MNIST dataset is stored.
-        train (bool): If True, loads the training set; otherwise, loads the test set. Default is True.
-        image_transform (v2.Compose, optional): Transformations to apply to input images.
-        image_target_transform (v2.Compose, optional): Transformations to apply to targets/labels.
-        download (bool): If True, downloads the dataset if not found at `root`. Default is False.
-        seed (int | float): Seed value for deterministic behavior. Default is 42.
+    A clean version of the MNIST dataset with reproducible behavior and corrections to dataset attributes.
     """
 
     def __init__(
         self,
         root: str,
         train: bool = True,
-        image_transform: v2.Compose | None = None,
-        image_target_transform: v2.Compose | None = None,
+        transform: v2.Compose | None = None,
+        target_transform: v2.Compose | None = None,
         download: bool = False,
         seed: int | float = 42,
     ):
+        """
+        Initializes the CleanMNIST dataset.
 
+        Args:
+            root (str): Root directory of the dataset.
+            train (bool): Whether to load the training set. Defaults to True.
+            transform (v2.Compose | None): Transformations for images. Defaults to None.
+            target_transform (v2.Compose | None): Transformations for labels. Defaults to None.
+            download (bool): Whether to download the dataset if not found. Defaults to False.
+            seed (int | float): Seed for reproducibility. Defaults to 42.
+        """
         torch.manual_seed(seed)
-        super().__init__(root, train=train, transform=image_transform, target_transform=image_target_transform, download=download)
-        self.seed = seed
+        super().__init__(root, train=train, transform=transform, target_transform=target_transform, download=download)
 
         # check and convert `self.targets` to `torch.Tensor`
         if not isinstance(self.targets, torch.Tensor):
             self.targets = torch.tensor(self.targets, dtype=torch.int64)
 
     def __len__(self):
+        """Returns the total number of samples."""
         return super().__len__()
 
     def __getitem__(self, index):
+        """
+        Retrieves an image and its label by index.
+
+        Args:
+            index (int): Index of the sample to retrieve.
+
+        Returns:
+            Tuple[torch.Tensor, int]: The image tensor and its label.
+        """
         image, label = super().__getitem__(index)
         return image, label
 
-    # override `raw_folder` to correct the MNIST path
     @property
     def raw_folder(self) -> str:
+        """
+        The folder containing the raw dataset.
+
+        Returns:
+            str: Path to the raw dataset folder.
+        """
         return Path(self.root) / self.__class__.__bases__[0].__name__ / "raw"
 
 
 class PoisonedMNIST(MNIST):
     """
-    A subclass of the MNIST dataset that implements poisoning of a subset of samples with a trigger.
+    A modified version of the MNIST dataset for backdoor attack experiments with poisoned samples.
 
-    Args:
-        root (str): Root directory where MNIST dataset is stored.
-        train (bool): If True, loads the training set; otherwise, loads the test set. Default is True.
-        clean_transform (v2.Compose, optional): Transformations to apply to clean input images.
-        clean_target_transform (v2.Compose, optional): Transformations to apply to clean targets/labels.
-        poisoned_transform (v2.Compose, optional): Transformations to apply to poisoned images.
-        poisoned_target_transform (v2.Compose, optional): Transformations to apply to poisoned targets/labels.
-        download (bool): If True, downloads the dataset if not found at `root`. Default is False.
-        target_index (int): Label assigned to poisoned samples. Default is 0.
-        victim_indices (tuple[int, ...]): Labels of samples eligible for poisoning. Default is (1, 2, 3, 4, 5, 6, 7, 8, 9).
-        poison_ratio (float): Fraction of victim samples to poison. Default is 0.05.
-        skip_target_samples (bool): If True, only samples from `victim_indices` are included in the dataset. Default is False.
-        seed (int | float): Seed value for deterministic behavior. Default is 42.
+    Attributes:
+        clean_transform (v2.Compose | None): Transformations for clean images.
+        clean_target_transform (v2.Compose | None): Transformations for clean labels.
+        poisoned_transform (v2.Compose | None): Transformations for poisoned images.
+        poisoned_target_transform (v2.Compose | None): Transformations for poisoned labels.
+        victim_samples_index (torch.Tensor): Indices of victim samples.
+        poisoned_samples_index (torch.Tensor): Indices of poisoned samples.
+        num_poison (int): Number of poisoned samples.
+        seed (int | float): Seed for reproducibility.
     """
 
     def __init__(
@@ -83,7 +95,23 @@ class PoisonedMNIST(MNIST):
         skip_target_samples: bool = False,
         seed: int | float = 42,
     ):
+        """
+        Initializes the PoisonedMNIST dataset.
 
+        Args:
+            root (str): Root directory of the dataset.
+            train (bool): Whether to load the training set. Defaults to True.
+            clean_transform (v2.Compose | None): Transformations for clean images. Defaults to None.
+            clean_target_transform (v2.Compose | None): Transformations for clean labels. Defaults to None.
+            download (bool): Whether to download the dataset if not found. Defaults to False.
+            target_index (int): The target label for poisoned samples. Defaults to 0.
+            victim_indices (Tuple[int, ...]): Labels eligible for poisoning. Defaults to (1, 2, 3, 4, 5, 6, 7, 8, 9).
+            poison_ratio (float): Proportion of samples to poison. Defaults to 0.05.
+            poisoned_transform (v2.Compose | None): Transformations for poisoned images. Defaults to None.
+            poisoned_target_transform (v2.Compose | None): Transformations for poisoned labels. Defaults to None.
+            skip_target_samples (bool): Whether to return only victim samples. Defaults to False.
+            seed (int | float): Seed for reproducibility. Defaults to 42.
+        """
         torch.manual_seed(seed)
         super().__init__(root, train=train, transform=None, target_transform=None, download=download)
         self.clean_transform = clean_transform
@@ -114,29 +142,29 @@ class PoisonedMNIST(MNIST):
 
     def __len__(self):
         """
-        Returns the number of samples in the dataset.
-        If `skip_target_samples` is True, returns only the count of victim samples.
+        Returns the total number of samples or only victim samples if `skip_target_samples` is True.
 
         Returns:
             int: Number of samples.
         """
-
         if self.skip_target_samples:
             return len(self.victim_samples_index)
         return super().__len__()
 
     def __getitem__(self, index):
         """
-        Retrieves a sample and its corresponding label by index, applying poisoning if required.
-        If `skip_target_samples` is True, returns only the index of victim samples.
+        Retrieves an image, label, poison status, and raw label by index.
 
         Args:
             index (int): Index of the sample to retrieve.
 
         Returns:
-            Tuple[Tensor, int, bool, bool]: A tuple containing the image tensor and its label followed by clean and poisoned mask.
+            Tuple[torch.Tensor, int, bool, int]:
+                - Image tensor.
+                - Transformed label.
+                - Whether the sample is poisoned.
+                - Raw label before transformation.
         """
-
         if self.skip_target_samples:
             index = self.victim_samples_index[index]
 
@@ -162,24 +190,25 @@ class PoisonedMNIST(MNIST):
 
         return image, label, poison_mask, raw_label
 
-    # override `raw_folder` to correct the MNIST path
     @property
     def raw_folder(self) -> str:
+        """
+        The folder containing the raw dataset.
+
+        Returns:
+            str: Path to the raw dataset folder.
+        """
         return Path(self.root) / self.__class__.__bases__[0].__name__ / "raw"
 
 
 if __name__ == "__main__":
-    import sys
-
-    sys.path.append(str(Path(__file__).resolve().parent.parent))
-
     import matplotlib.pyplot as plt
     from torch.utils.data import DataLoader
 
-    from triggers.target_transform import LabelFlip
-    from triggers.transform import InjectSolidTrigger
+    from backdoor_toolbox.triggers.target_transform import LabelFlip
+    from backdoor_toolbox.triggers.transform import InjectSolidTrigger
 
-    ROOT = "../../data"
+    ROOT = "./data"
     TARGET_INDEX = 0
     VICTIM_INDICES = tuple(range(1, 10))
     SEED = 42
@@ -239,8 +268,8 @@ if __name__ == "__main__":
     clean_mnist = CleanMNIST(
         root=ROOT,
         train=True,
-        image_transform=CLEAN_TRANSFORM,
-        image_target_transform=CLEAN_TARGET_TRANSFORM,
+        transform=CLEAN_TRANSFORM,
+        target_transform=CLEAN_TARGET_TRANSFORM,
         download=False,
         seed=SEED,
     )

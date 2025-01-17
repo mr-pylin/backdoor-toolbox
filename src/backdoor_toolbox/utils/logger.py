@@ -12,16 +12,22 @@ from torch.utils.data import DataLoader
 
 class Logger:
     """
-    Initializes the Logger with a root directory and optional flags for
-    appending data and verbosity.
+    A logging utility for saving configurations, hyperparameters, metrics, confusion matrices, plots, and model weights.
 
-    Args:
-        root (Path): The base directory where all logs will be saved.
-        include_date (bool): Whether to append to existing files or create new ones. Default is True.
-        verbose (bool): Whether to print detailed information about the saving process. Default is True.
+    Attributes:
+        root (Path): Root directory for saving logs.
+        verbose (bool): Flag to print log messages during saving.
     """
 
     def __init__(self, root: Path, include_date: bool = True, verbose: bool = True):
+        """
+        Initializes the Logger object.
+
+        Args:
+            root (Path): Root directory where logs will be saved.
+            include_date (bool): Whether to include a timestamp in the directory name. Defaults to True.
+            verbose (bool): Flag to print log messages. Defaults to True.
+        """
         if include_date:
             self.root = Path(f"{root}_{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
         else:
@@ -31,8 +37,53 @@ class Logger:
         # make directory if not available
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def save_metrics(self, path: Path, filename: str, **data):
+    def save_configs(self, src_path: Path, filename: str) -> None:
+        """
+        Saves a copy of the configuration file to the log directory.
 
+        Args:
+            src_path (Path): Path to the source configuration file.
+            filename (str): Name of the configuration file to save.
+        """
+        save_dir = self.root
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{filename}.py"
+
+        with open(f"{src_path}/{filename}.py", "rb") as src:
+            with open(save_path, "wb") as dst:
+                dst.write(src.read())
+
+        if self.verbose:
+            print(f"[Logger]: A copy of {filename}.py saved to {save_path}")
+
+    def save_hyperparameters(self, path: Path, filename: str, **hyperparameters) -> None:
+        """
+        Saves the hyperparameters as a JSON file.
+
+        Args:
+            path (Path): Subdirectory where the hyperparameters will be saved.
+            filename (str): Name of the file to save.
+            hyperparameters (Dict[str, Union[str, int, float]]): Hyperparameters to save.
+        """
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{filename}.json"
+
+        with save_path.open("w") as f:
+            json.dump(hyperparameters, f, indent=4)
+
+        if self.verbose:
+            print(f"[Logger]: Hyperparameters saved to {save_path}")
+
+    def save_metrics(self, path: Path, filename: str, **data) -> None:
+        """
+        Saves metrics as a CSV file.
+
+        Args:
+            path (Path): Subdirectory where the metrics will be saved.
+            filename (str): Name of the file to save.
+            data (Dict[str, Union[str, float, int]]): Metrics to save.
+        """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{filename}.csv"
@@ -50,38 +101,16 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Metrics appended to {save_path}")
 
-    def save_hyperparameters(self, path: Path, filename: str, **hyperparameters):
+    def save_confusion_matrix(self, path: Path, filename: str, cm: np.ndarray | torch.Tensor, unique_labels: list) -> None:
         """
-        Saves the hyperparameters used in training to a JSON file.
+        Saves the confusion matrix as a CSV file.
 
         Args:
-            path (Path): The subdirectory where the hyperparameters file will be saved.
-            filename (str): The name of the JSON file where hyperparameters will be saved.
-            **hyperparameters: Hyperparameters used in the training process, with keys as parameter names
-                               and values as the corresponding hyperparameter values.
+            path (Path): Subdirectory where the confusion matrix will be saved.
+            filename (str): Name of the file to save.
+            cm (np.ndarray | torch.Tensor): Confusion matrix to save.
+            unique_labels (list[str]): List of unique labels to include as header.
         """
-
-        save_dir = self.root / path
-        save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.json"
-
-        with save_path.open("w") as f:
-            json.dump(hyperparameters, f, indent=4)
-
-        if self.verbose:
-            print(f"[Logger]: Hyperparameters saved to {save_path}")
-
-    def save_confusion_matrix(self, path: Path, filename: str, cm: np.ndarray | torch.Tensor, unique_labels: list):
-        """
-        Saves the confusion matrix as a CSV file with true and predicted labels as the first row and column.
-
-        Args:
-            path (Path): The subdirectory where the confusion matrix file will be saved.
-            filename (str): The name of the CSV file where the confusion matrix will be saved.
-            cm (np.ndarray | torch.Tensor): The confusion matrix, either as a NumPy array or a PyTorch tensor.
-            unique_labels (list): A list of unique labels (classes) to be used as the first row and column.
-        """
-
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{filename}.csv"
@@ -105,22 +134,18 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Confusion matrix saved to {save_path}")
 
-    def save_plot(self, path: Path, filename: str, save_format: str, ylabel: str, title: str, show: bool = False, **data):
+    def save_plot(self, path: Path, filename: str, save_format: str, ylabel: str, title: str, show: bool = False, **data) -> None:
         """
-        Saves a training plot (e.g., loss, accuracy) as an image file. Multiple metrics can be plotted on the same figure.
+        Saves a plot of the provided data.
 
         Args:
-            path (Path): The subdirectory where the plot file will be saved.
-            filename (str): The name of the plot file (without extension).
-            save_format (str): The format in which to save the plot. Must be either 'png' or 'svg'.
-            show (bool): Whether to display the plot using plt.show(). Default is False.
-            ylabel (str): The label for the y-axis. Default is "Value".
-            title (str): The title of the plot. Default is "Training Plot".
-            **data: Key-value pairs of data to plot, where the key is the label (e.g., "train_loss")
-                    and the value is the data (e.g., list of loss values).
-
-        Raises:
-            ValueError: If the save_format is not 'png' or 'svg'.
+            path (Path): Subdirectory where the plot will be saved.
+            filename (str): Name of the file to save.
+            save_format (str): Format for saving the plot. Can be 'png' or 'svg'.
+            ylabel (str): Label for the y-axis.
+            title (str): Title of the plot.
+            show (bool): Whether to show the plot after saving. Defaults to False.
+            data (Dict[str, list[Union[int, float]]]): Data series to plot.
         """
         if save_format not in ["png", "svg"]:
             raise ValueError("Invalid save_format. Only 'png' and 'svg' are supported.")
@@ -156,16 +181,15 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Plot saved to {save_path}")
 
-    def save_weights(self, path: Path, filename: str, model: nn.Module, only_state_dict: bool = True):
+    def save_weights(self, path: Path, filename: str, model: nn.Module, only_state_dict: bool = True) -> None:
         """
-        Saves the model weights (either the full model or only the state_dict) to a .pth file.
+        Saves the model weights.
 
         Args:
-            path (Path): The subdirectory where the model weights file will be saved.
-            filename (str): The name of the file where the model weights will be saved.
-            model (nn.Module): The PyTorch model whose weights are to be saved.
-            only_state_dict (bool): If True, only the state_dict of the model is saved. Default is True.
-                                    If False, the entire model is saved.
+            path (Path): Subdirectory where the model weights will be saved.
+            filename (str): Name of the file to save.
+            model (nn.Module): The model whose weights are to be saved.
+            only_state_dict (bool): Whether to save only the state_dict. Defaults to True.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +203,20 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Model weights saved to {save_path}")
 
-    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device):
+    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device) -> None:
+        """
+        Saves a demo image of the model predictions.
+
+        Args:
+            path (Path): Subdirectory where the demo will be saved.
+            filename (str): Name of the file to save.
+            model (nn.Module): The model to evaluate.
+            dataset: Dataset to sample demo images from.
+            nrows (int): Number of rows in the demo plot.
+            ncols (int): Number of columns in the demo plot.
+            show (bool): Whether to display the demo plot after saving.
+            device (torch.device): Device to run the model on.
+        """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{filename}.png"
@@ -215,7 +252,7 @@ class Logger:
 if __name__ == "__main__":
     from torch import nn, optim
 
-    log_dir = Path("../../logs/temp")
+    log_dir = Path("./logs/temp")
     logger = Logger(log_dir, include_date=True, verbose=True)
 
     # save metrics in csv file
@@ -279,8 +316,8 @@ if __name__ == "__main__":
         path=Path("plots"),
         filename="loss_plot_per_epoch",
         save_format="png",
-        title="Train and Validation loss over epochs",
         ylabel="Loss",
+        title="Train and Validation loss over epochs",
         show=True,
         train_loss=train_loss,
         val_loss=val_loss,
@@ -292,8 +329,8 @@ if __name__ == "__main__":
         path=Path("plots"),
         filename="cda_plot_per_epoch",
         save_format="svg",
-        title="Train and Validation CDA over epochs",
         ylabel="CDA",
+        title="Train and Validation CDA over epochs",
         show=True,
         train_cda=train_cda,
         val_cda=val_cda,
