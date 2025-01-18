@@ -14,7 +14,6 @@ config = {
         "num_classes": 10,
         "image_shape": (1, 28, 28),  # consider `image_shape` after passing through `v2.ToImage()`
     },
-    "model": {"weights": None},  # e.g. "ResNet18_Weights.IMAGENET1K_V1" or path to .pth file
     "modules": {
         "dataset": {
             # from "root"."file" import "class"
@@ -25,8 +24,12 @@ config = {
         "model": {
             # from "root"."file" import "class"
             "root": "models.cnn",
-            "file": "resnet18",
-            "class": "ResNet18",
+            "file": "resnet_wrapper",
+            "class": "CustomResNet",
+            "params": {
+                "weights": None,  # e.g. "ResNet18_Weights.IMAGENET1K_V1" or path to .pth file
+                "kwargs": {"model_name": "resnet18"},
+            },
         },
     },
     "train_val": {
