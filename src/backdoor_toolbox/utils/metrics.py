@@ -10,7 +10,7 @@ class AttackSuccessRate(Metric):
         target_class (Optional[int]): The target class for the attack. If None, the metric will compute the overall accuracy.
     """
 
-    def __init__(self, target_index: int | None = None):
+    def __init__(self, target_index: int):
         """
         Initializes the AttackSuccessRate metric.
 
@@ -36,11 +36,11 @@ class AttackSuccessRate(Metric):
 
         preds = preds.argmax(dim=-1)
 
-        if self.target_class is not None:
-            self.success += (preds == self.target_class).sum()
-        else:
-            targets = targets[poison_mask]
-            self.success += (preds == targets).sum()
+        # if self.target_class is not None:
+        self.success += (preds == self.target_class).sum()
+        # else:
+        #     targets = targets[poison_mask]
+        #     self.success += (preds == targets).sum()
 
         self.total += len(preds)
 
