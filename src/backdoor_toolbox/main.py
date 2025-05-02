@@ -1,7 +1,6 @@
 import importlib
 
-from backdoor_toolbox.routine import routine
-from backdoor_toolbox.utils.logger import Logger
+from backdoor_toolbox.config import routine
 
 
 def main():
