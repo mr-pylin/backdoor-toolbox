@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "backdoor-toolbox"
-version = "0.1.0"
-description = "A toolbox for running several backdoor attacks and defenses in deep learning models."
+name = "backdoor_toolbox"
+version = "1.0.0"
+description = "A toolbox for training models and running several backdoor attacks and defenses in deep learning models."
 authors = ["Amirhossein Heydari <amirhosseinheydari78@gmail.com>"]
 maintainers = ["Amirhossein Heydari <amirhosseinheydari78@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/mr-pylin/backdoor_toolbox"
+repository = "https://github.com/mr-pylin/backdoor-toolbox"
 keywords = ["PyTorch", "backdoor", "security", "deep learning", "machine learning", "neural networks"]
 readme = "README.md"
 
@@ -36,4 +36,4 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
-line-length = 150
+line-length = 120
