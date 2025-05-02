@@ -22,26 +22,19 @@ class AttackSuccessRate(Metric):
         self.add_state("success", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def update(self, preds: torch.Tensor, targets: torch.Tensor, poison_mask: torch.Tensor | None) -> None:
+    def update(self, preds: torch.Tensor, poison_mask: torch.Tensor | None) -> None:
         """
         Updates the metric state with predictions, targets, and optional poison mask.
 
         Args:
             preds (torch.Tensor): The model predictions of shape (batch_size, num_classes).
-            targets (torch.Tensor): The ground truth labels of shape (batch_size).
             poison_mask (Optional[torch.Tensor]): A binary mask indicating poisoned samples. If None, all samples are used.
         """
         if poison_mask is not None:
             preds = preds[poison_mask]
 
         preds = preds.argmax(dim=-1)
-
-        # if self.target_class is not None:
         self.success += (preds == self.target_class).sum()
-        # else:
-        #     targets = targets[poison_mask]
-        #     self.success += (preds == targets).sum()
-
         self.total += len(preds)
 
     def compute(self) -> torch.Tensor:
