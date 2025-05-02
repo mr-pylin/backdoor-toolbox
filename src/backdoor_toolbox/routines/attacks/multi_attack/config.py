@@ -2,7 +2,7 @@ import torch
 from torch import optim
 from torchvision.transforms import v2
 from backdoor_toolbox.triggers.target_transform import TargetTriggerTypes
-from backdoor_toolbox.triggers.transform import TriggerTypes
+from backdoor_toolbox.triggers.transform.transform import TriggerTypes
 
 __config = {
     "target_index": 0,
