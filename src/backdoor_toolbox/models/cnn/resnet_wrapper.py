@@ -23,18 +23,27 @@ class CustomResNet(nn.Module):
     """
 
     RESNET_MODELS = {
-        "resnet18": (resnet18, ResNet18_Weights),
-        "resnet34": (resnet34, ResNet34_Weights),
-        "resnet50": (resnet50, ResNet50_Weights),
-        "resnet101": (resnet101, ResNet101_Weights),
-        "resnet152": (resnet152, ResNet152_Weights),
+        "resnet18": (resnet18, ResNet18_Weights.IMAGENET1K_V1),
+        "resnet34": (resnet34, ResNet34_Weights.IMAGENET1K_V1),
+        "resnet50": (resnet50, ResNet50_Weights.IMAGENET1K_V2),
+        "resnet101": (resnet101, ResNet101_Weights.IMAGENET1K_V2),
+        "resnet152": (resnet152, ResNet152_Weights.IMAGENET1K_V2),
     }
 
-    def __init__(self, in_features: int, num_classes: int, weights: str | None, device: str, verbose: bool, **kwargs):
+    def __init__(
+        self,
+        arch: str,
+        in_features: int,
+        num_classes: int,
+        weights: str | None,
+        device: str,
+        verbose: bool,
+    ):
         """
         Initializes the ResNet model.
 
         Args:
+            model_name (str): Name of the ResNet model to use ('resnet18', 'resnet34', etc.).
             in_features (int): Number of input channels.
             num_classes (int): Number of output classes.
             weights (str | None): Specifies pretrained weights.
@@ -43,33 +52,30 @@ class CustomResNet(nn.Module):
                 - If `None`, initializes the model without pretrained weights.
             device (str): Device to move the model to ('cpu' or 'cuda').
             verbose (bool): Whether to print logs (e.g., when weights are loaded).
-            model_name (str): Name of the ResNet model to use ('resnet18', 'resnet34', etc.).
 
         Raises:
             ValueError: If the model name is not in the supported ResNet variants.
-            TypeError: If `model_name` is not provided in **kwargs.
         """
         super().__init__()
 
-        if "model_name" not in kwargs:
-            raise TypeError("model_name must be provided as a keyword argument.")
+        if arch not in self.RESNET_MODELS:
+            raise ValueError(f"Unsupported model_name '{arch}'. Choose from {list(self.RESNET_MODELS.keys())}.")
 
-        model_name = kwargs["model_name"]
+        model_fn, model_w = self.RESNET_MODELS[arch]
 
-        if model_name not in self.RESNET_MODELS:
-            raise ValueError(f"Unsupported model_name '{model_name}'. Choose from {list(self.RESNET_MODELS.keys())}.")
-
-        model_fn, _ = self.RESNET_MODELS[model_name]
-
-        # Load the model
+        # load the model
         if isinstance(weights, str) and weights.endswith((".pth", ".pt")):
             self.model = model_fn(weights=None)
             self.model.load_state_dict(torch.load(weights, weights_only=True))
             if verbose:
-                print(f"Loaded weights from {weights}")
-        else:
+                print(f"Loaded pretrained weights: {weights}")
+        elif weights is None:
             self.model = model_fn(weights=weights)
-            if verbose and weights is not None:
+            if verbose:
+                print(f"No pretrained weights selected.")
+        else:
+            self.model = model_fn(weights=model_w)
+            if verbose:
                 print(f"Loaded pretrained weights: {weights}")
 
         # Modify the model to fit the desired dataset
@@ -94,7 +100,7 @@ class CustomResNet(nn.Module):
 
 if __name__ == "__main__":
     model_1 = CustomResNet(
-        model_name="resnet18",
+        arch="resnet18",
         in_features=1,
         num_classes=10,
         weights=ResNet18_Weights.IMAGENET1K_V1,
@@ -102,7 +108,7 @@ if __name__ == "__main__":
         verbose=True,
     )
     model_2 = CustomResNet(
-        model_name="resnet50",
+        arch="resnet50",
         in_features=3,
         num_classes=1000,
         weights=ResNet50_Weights.IMAGENET1K_V1,
@@ -110,7 +116,7 @@ if __name__ == "__main__":
         verbose=True,
     )
     model_3 = CustomResNet(
-        model_name="resnet101",
+        arch="resnet101",
         in_features=1,
         num_classes=10,
         weights=None,
@@ -118,7 +124,7 @@ if __name__ == "__main__":
         verbose=True,
     )
     model_4 = CustomResNet(
-        model_name="resnet152",
+        arch="resnet152",
         in_features=3,
         num_classes=5,
         weights="temp.pth",
