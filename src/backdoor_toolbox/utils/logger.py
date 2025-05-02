@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torchvision.transforms import v2
 
 
 class Logger:
@@ -101,7 +102,14 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Metrics appended to {save_path}")
 
-    def save_confusion_matrix(self, path: Path, filename: str, cm: np.ndarray | torch.Tensor, unique_labels: list) -> None:
+    def save_confusion_matrix(
+        self,
+        path: Path,
+        filename: str,
+        cm: np.ndarray | torch.Tensor,
+        cm_title: str,
+        unique_labels: list,
+    ) -> None:
         """
         Saves the confusion matrix as a CSV file.
 
@@ -120,7 +128,7 @@ class Logger:
             cm = cm.cpu().numpy()
 
         # Create the header with predicted labels (first row)
-        header = ["True/Pred"] + unique_labels
+        header = [cm_title] + unique_labels
 
         # Create the matrix with true labels as the first column
         cm_with_labels = np.vstack([header, np.column_stack([unique_labels, cm])])
@@ -134,7 +142,9 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Confusion matrix saved to {save_path}")
 
-    def save_plot(self, path: Path, filename: str, save_format: str, ylabel: str, title: str, show: bool = False, **data) -> None:
+    def save_plot(
+        self, path: Path, filename: str, save_format: str, ylabel: str, title: str, show: bool = False, **data
+    ) -> None:
         """
         Saves a plot of the provided data.
 
@@ -203,7 +213,7 @@ class Logger:
         if self.verbose:
             print(f"[Logger]: Model weights saved to {save_path}")
 
-    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device) -> None:
+    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device, clamp=True) -> None:
         """
         Saves a demo image of the model predictions.
 
@@ -231,11 +241,13 @@ class Logger:
             predictions = model(data[0].to(device)).argmax(dim=1).cpu()
 
         # plot
-        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols, nrows), layout="compressed")
+        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 1.5, nrows * 1.5), layout="constrained")
         plt.suptitle(f"First {nrows * ncols} images of {filename}")
         for i in range(nrows):
             for j in range(ncols):
-                axs[i, j].imshow(data[0][i * ncols + j].permute(1, 2, 0), cmap="gray")
+                if clamp and torch.is_floating_point(data[0][i * ncols + j]):
+                    img = torch.clamp(data[0][i * ncols + j], 0, 1)
+                axs[i, j].imshow(img.permute(1, 2, 0), cmap="gray")
                 axs[i, j].set_title(f"t:{labels[i * ncols + j].item()},p:{predictions[i * ncols + j].item()}")
                 axs[i, j].axis("off")
 
@@ -245,8 +257,43 @@ class Logger:
         if show:
             plt.show()
 
+        # close the plot to avoid memory issues in long training runs
+        plt.close()
+
         if self.verbose:
             print(f"[Logger]: Demo saved to {save_path}")
+
+    def save_trigger(self, path, filename, trigger_policy, bg_size, bg_color, show) -> None:
+        """
+        Args:
+            path (Path): Subdirectory where the demo will be saved.
+            filename (str): Name of the file to save.
+            show (bool): Whether to display the demo plot after saving.
+        """
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{filename}.png"
+
+        bg = torch.full(size=bg_size, fill_value=bg_color, dtype=torch.float32)
+        poisoned_bg = trigger_policy(bg)
+
+        # plot
+        plt.figure(figsize=(9, 6), layout="compressed")
+        plt.imshow(poisoned_bg.permute(1, 2, 0), vmin=0, vmax=1, cmap="gray")
+        plt.title(trigger_policy.name)
+
+        # save the plot
+        plt.savefig(save_path, format="PNG", bbox_inches="tight")
+
+        # show the plot if specified
+        if show:
+            plt.show()
+
+        # close the plot to avoid memory issues in long training runs
+        plt.close()
+
+        if self.verbose:
+            print(f"[Logger]: Demo Trigger saved to {save_path}")
 
 
 if __name__ == "__main__":
@@ -338,6 +385,8 @@ if __name__ == "__main__":
 
     # example model (a simple NN)
     model_1 = nn.Sequential(nn.Linear(10, 5), nn.ReLU(), nn.Linear(5, 2))
-    logger.save_weights(path=Path("train-val/checkpoints"), filename="epoch_1_parameters", model=model_1, only_state_dict=True)
+    logger.save_weights(
+        path=Path("train-val/checkpoints"), filename="epoch_1_parameters", model=model_1, only_state_dict=True
+    )
     model_2 = nn.Sequential(nn.Linear(10, 5), nn.ReLU(), nn.Linear(5, 2))
     logger.save_weights(path=Path("test/checkpoints"), filename="parameters", model=model_2, only_state_dict=True)
