@@ -165,10 +165,9 @@ cython_debug/
 
 # dataset folders
 data/
-logs/
 
-# temporary files
-logs/temp*/
+# logs
+logs/
 
 # vscode
 .vscode/
