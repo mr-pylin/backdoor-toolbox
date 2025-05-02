@@ -9,10 +9,18 @@
 #     "verbose": True,
 # }
 
-# backdoor_toolbox/routines/attacks/quantization_attack/
+# backdoor_toolbox/routines/attacks/multi_attack/
 routine = {
-    "root": "backdoor_toolbox.routines.attacks.quantization_attack",
-    "file": "quantization_attack",
-    "class": "QuantizationAttackRoutine",
+    "root": "backdoor_toolbox.routines.attacks.multi_attack",
+    "file": "multi_attack",
+    "class": "MultiAttackRoutine",
     "verbose": True,
 }
+
+# backdoor_toolbox/routines/attacks/quantization_attack/
+# routine = {
+#     "root": "backdoor_toolbox.routines.attacks.quantization_attack",
+#     "file": "quantization_attack",
+#     "class": "QuantizationAttackRoutine",
+#     "verbose": True,
+# }
