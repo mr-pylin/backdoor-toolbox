@@ -16,108 +16,90 @@ from torchvision.models import (
 
 class CustomResNet(nn.Module):
     """
-    A general ResNet-based neural network model with customizable input features, number of classes, and optional pretrained weights.
-
-    Attributes:
-        model (nn.Module): The selected ResNet model with customized input and output layers.
+    A ResNet wrapper for small images that also drops the heaviest stage (layer4)
+    to reduce parameters and speed up training.
+    - 3×3 stride=1 conv1
+    - No initial max-pool
+    - Remove layer4 entirely
     """
 
     RESNET_MODELS = {
-        "resnet18": (resnet18, ResNet18_Weights.IMAGENET1K_V1),
-        "resnet34": (resnet34, ResNet34_Weights.IMAGENET1K_V1),
-        "resnet50": (resnet50, ResNet50_Weights.IMAGENET1K_V2),
-        "resnet101": (resnet101, ResNet101_Weights.IMAGENET1K_V2),
-        "resnet152": (resnet152, ResNet152_Weights.IMAGENET1K_V2),
+        "resnet18": (resnet18, ResNet18_Weights.IMAGENET1K_V1, 256),
+        "resnet34": (resnet34, ResNet34_Weights.IMAGENET1K_V1, 256),
+        "resnet50": (resnet50, ResNet50_Weights.IMAGENET1K_V2, 1024),
+        "resnet101": (resnet101, ResNet101_Weights.IMAGENET1K_V2, 1024),
+        "resnet152": (resnet152, ResNet152_Weights.IMAGENET1K_V2, 1024),
     }
+    # The third tuple element is the # output channels of layer3
 
     def __init__(
         self,
         arch: str,
-        in_features: int,
+        in_channels: int,
         num_classes: int,
         weights: str | None,
-        device: str,
-        verbose: bool,
+        device: str = "cpu",
+        verbose: bool = False,
     ):
-        """
-        Initializes the ResNet model.
-
-        Args:
-            model_name (str): Name of the ResNet model to use ('resnet18', 'resnet34', etc.).
-            in_features (int): Number of input channels.
-            num_classes (int): Number of output classes.
-            weights (str | None): Specifies pretrained weights.
-                - If a predefined weight object is passed, initializes with those weights.
-                - If a `.pth` file path is provided, loads weights from the file.
-                - If `None`, initializes the model without pretrained weights.
-            device (str): Device to move the model to ('cpu' or 'cuda').
-            verbose (bool): Whether to print logs (e.g., when weights are loaded).
-
-        Raises:
-            ValueError: If the model name is not in the supported ResNet variants.
-        """
         super().__init__()
 
         if arch not in self.RESNET_MODELS:
-            raise ValueError(f"Unsupported model_name '{arch}'. Choose from {list(self.RESNET_MODELS.keys())}.")
+            raise ValueError(f"Unsupported arch '{arch}'. Choose from {list(self.RESNET_MODELS)}")
 
-        model_fn, model_w = self.RESNET_MODELS[arch]
+        model_fn, default_w, layer3_out = self.RESNET_MODELS[arch]
 
-        # load the model
+        # Load pretrained or from file
         if isinstance(weights, str) and weights.endswith((".pth", ".pt")):
             self.model = model_fn(weights=None)
-            self.model.load_state_dict(torch.load(weights, weights_only=True))
+            self.model.load_state_dict(torch.load(weights, map_location="cpu"))
             if verbose:
-                print(f"Loaded pretrained weights: {weights}")
+                print(f"Loaded weights from {weights}")
         elif weights is None:
-            self.model = model_fn(weights=weights)
+            self.model = model_fn(weights=None)
             if verbose:
-                print(f"No pretrained weights selected.")
+                print("No pretrained weights")
         else:
-            self.model = model_fn(weights=model_w)
+            self.model = model_fn(weights=default_w)
             if verbose:
-                print(f"Loaded pretrained weights: {weights}")
+                print(f"Loaded default pretrained weights for {arch}")
 
-        # Modify the model to fit the desired dataset
-        self.model.conv1 = nn.Conv2d(in_features, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
+        # Replace conv1 for small images
+        self.model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.model.maxpool = nn.Identity()
 
-        # Move model to device
-        self.model = self.model.to(device)
+        # Remove layer4 to slim down the network
+        self.model.layer4 = nn.Identity()
+
+        # Replace final FC to match layer3's output channels
+        self.model.fc = nn.Linear(layer3_out, num_classes)
+
+        # Move to device
+        self.model.to(device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Performs a forward pass through the model.
-
-        Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, in_features, height, width).
-
-        Returns:
-            torch.Tensor: Output tensor of shape (batch_size, num_classes).
-        """
         return self.model(x)
 
 
 if __name__ == "__main__":
     model_1 = CustomResNet(
         arch="resnet18",
-        in_features=1,
+        in_channels=1,
         num_classes=10,
-        weights=ResNet18_Weights.IMAGENET1K_V1,
+        weights=True,
         device="cpu",
         verbose=True,
     )
     model_2 = CustomResNet(
         arch="resnet50",
-        in_features=3,
+        in_channels=3,
         num_classes=1000,
-        weights=ResNet50_Weights.IMAGENET1K_V1,
+        weights=True,
         device="cuda",
         verbose=True,
     )
     model_3 = CustomResNet(
         arch="resnet101",
-        in_features=1,
+        in_channels=1,
         num_classes=10,
         weights=None,
         device="cpu",
@@ -125,7 +107,7 @@ if __name__ == "__main__":
     )
     model_4 = CustomResNet(
         arch="resnet152",
-        in_features=3,
+        in_channels=3,
         num_classes=5,
         weights="temp.pth",
         device="cpu",
