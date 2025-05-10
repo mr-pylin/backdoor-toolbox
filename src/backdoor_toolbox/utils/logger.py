@@ -1,392 +1,466 @@
 import csv
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from torchvision.io import write_png
 from torchvision.transforms import v2
 
 
 class Logger:
     """
-    A logging utility for saving configurations, hyperparameters, metrics, confusion matrices, plots, and model weights.
+    A utility for saving configurations, hyperparameters, metrics, confusion matrices, plots, model weights, and demos.
 
     Attributes:
-        root (Path): Root directory for saving logs.
-        verbose (bool): Flag to print log messages during saving.
+        root (Path): Directory to store all logs and artifacts.
+        verbose (bool): Whether to print status messages during saves.
     """
 
-    def __init__(self, root: Path, include_date: bool = True, verbose: bool = True):
+    def __init__(
+        self,
+        root: Path,
+        verbose: bool = True,
+    ):
         """
-        Initializes the Logger object.
+        Initialize the Logger.
 
         Args:
-            root (Path): Root directory where logs will be saved.
-            include_date (bool): Whether to include a timestamp in the directory name. Defaults to True.
-            verbose (bool): Flag to print log messages. Defaults to True.
+            root: Base path for logging results.
+            verbose: Print messages during saving. Defaults to True.
         """
-        if include_date:
-            self.root = Path(f"{root}_{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
-        else:
-            self.root = root
+        self.root = Path(f"{root}/{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
         self.verbose = verbose
 
-        # make directory if not available
+        # Make directory if not available
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def save_configs(self, src_path: Path, filename: str) -> None:
+    def save_configs(
+        self,
+        src_path: Path,
+        dst_path: Path,
+        filename: str,
+    ) -> None:
         """
-        Saves a copy of the configuration file to the log directory.
+        Save a Python config file as a copy in the log directory.
 
         Args:
-            src_path (Path): Path to the source configuration file.
-            filename (str): Name of the configuration file to save.
+            src_path: Directory containing the source file.
+            dst_path: Relative destination path under the logger root.
+            filename: File name without extension (assumes .py).
         """
-        save_dir = self.root
+        save_dir = self.root / dst_path
         save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.py"
 
-        with open(f"{src_path}/{filename}.py", "rb") as src:
-            with open(save_path, "wb") as dst:
-                dst.write(src.read())
+        src_file = src_path / f"{filename}.py"
+        dst_file = save_dir / f"{filename}.py"
 
-        if self.verbose:
-            print(f"[Logger]: A copy of {filename}.py saved to {save_path}")
+        try:
+            shutil.copyfile(src_file, dst_file)
+            if self.verbose:
+                print(f"[Logger] Saved a copy of '{src_file}' to '{dst_file}'")
 
-    def save_hyperparameters(self, path: Path, filename: str, **hyperparameters) -> None:
-        """
-        Saves the hyperparameters as a JSON file.
+        except FileNotFoundError:
+            print(f"[Logger][Error] Source file not found: '{src_file}'")
 
-        Args:
-            path (Path): Subdirectory where the hyperparameters will be saved.
-            filename (str): Name of the file to save.
-            hyperparameters (Dict[str, Union[str, int, float]]): Hyperparameters to save.
-        """
-        save_dir = self.root / path
-        save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.json"
+        except PermissionError:
+            print(f"[Logger][Error] Permission denied when accessing '{src_file}' or '{dst_file}'")
 
-        with save_path.open("w") as f:
-            json.dump(hyperparameters, f, indent=4)
+        except Exception as e:
+            print(f"[Logger][Error] Unexpected error while saving config: {e}")
 
-        if self.verbose:
-            print(f"[Logger]: Hyperparameters saved to {save_path}")
-
-    def save_metrics(self, path: Path, filename: str, **data) -> None:
-        """
-        Saves metrics as a CSV file.
-
-        Args:
-            path (Path): Subdirectory where the metrics will be saved.
-            filename (str): Name of the file to save.
-            data (Dict[str, Union[str, float, int]]): Metrics to save.
-        """
-        save_dir = self.root / path
-        save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.csv"
-
-        path_exist = save_path.exists()
-        with save_path.open("a", newline="") as f:
-            writer = csv.writer(f)
-
-            # check if the file exists to decide whether to write a header
-            if not path_exist:
-                writer.writerow(data.keys())
-
-            writer.writerow(data.values())
-
-        if self.verbose:
-            print(f"[Logger]: Metrics appended to {save_path}")
-
-    def save_confusion_matrix(
+    def save_hyperparameters(
         self,
         path: Path,
         filename: str,
-        cm: np.ndarray | torch.Tensor,
-        cm_title: str,
-        unique_labels: list,
+        **hyperparameters: Any,
     ) -> None:
         """
-        Saves the confusion matrix as a CSV file.
+        Save hyperparameters as a JSON file and any non-serializable objects (like state_dicts) separately.
 
         Args:
-            path (Path): Subdirectory where the confusion matrix will be saved.
-            filename (str): Name of the file to save.
-            cm (np.ndarray | torch.Tensor): Confusion matrix to save.
-            unique_labels (list[str]): List of unique labels to include as header.
+            path: Subdirectory under log root to save the file.
+            filename: File name (without .json extension).
+            **hyperparameters: Arbitrary key-value hyperparameters.
+        """
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        save_path = save_dir / f"{filename}.json"
+        state_dict_path = save_dir / f"{filename}_state_dict.pth"
+
+        # Separate serializable and non-serializable hyperparameters
+        serializable_hparams = {}
+        non_serializable_hparams = {}
+
+        for key, value in hyperparameters.items():
+            try:
+                # Try to serialize the value to JSON
+                json.dumps(value)
+                serializable_hparams[key] = value
+            except (TypeError, ValueError):
+                # If serialization fails, treat as non-serializable and save separately
+                non_serializable_hparams[key] = value
+
+        try:
+            # Save serializable hyperparameters to JSON
+            with save_path.open("w") as f:
+                json.dump(serializable_hparams, f, indent=4)
+
+            # Save non-serializable hyperparameters (e.g., state_dict) using torch.save
+            if non_serializable_hparams:
+                torch.save(non_serializable_hparams, state_dict_path)
+
+            if self.verbose:
+                print(f"[Logger] Hyperparameters saved to '{save_path}'")
+                if non_serializable_hparams:
+                    print(f"[Logger] Non-serializable hyperparameters saved to '{state_dict_path}'")
+
+        except Exception as e:
+            print(f"[Logger][Error] Unexpected error while saving hyperparameters: {e}")
+
+    def save_metrics(
+        self,
+        path: Path,
+        filename: str,
+        **data: float,
+    ) -> None:
+        """
+        Save metrics to a CSV file, appending if file already exists.
+
+        Args:
+            path: Subdirectory to save the file in.
+            filename: File name (without `.csv` extension).
+            **data: Key-value metric pairs to log.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{filename}.csv"
 
-        # Convert torch.Tensor to numpy.ndarray if necessary
-        if isinstance(cm, torch.Tensor):
-            cm = cm.cpu().numpy()
+        file_exists = save_path.exists()
 
-        # Create the header with predicted labels (first row)
-        header = [cm_title] + unique_labels
+        try:
+            with save_path.open("a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=data.keys())
 
-        # Create the matrix with true labels as the first column
-        cm_with_labels = np.vstack([header, np.column_stack([unique_labels, cm])])
+                if not file_exists:
+                    writer.writeheader()
 
-        # Convert the matrix to string to avoid dtype issues
-        cm_with_labels = cm_with_labels.astype(str)
+                writer.writerow(data)
 
-        # Save the confusion matrix as a CSV
-        np.savetxt(save_path, cm_with_labels, delimiter=",", fmt="%s", comments="")
+            if self.verbose:
+                print(f"[Logger] Metrics appended to '{save_path}'")
 
-        if self.verbose:
-            print(f"[Logger]: Confusion matrix saved to {save_path}")
+        except Exception as e:
+            print(f"[Logger][Error] Failed to save metrics: {e}")
 
-    def save_plot(
-        self, path: Path, filename: str, save_format: str, ylabel: str, title: str, show: bool = False, **data
+    def save_labeled_matrix(
+        self,
+        path: Path,
+        filename: str,
+        matrix: np.ndarray | torch.Tensor,
+        row0_col0_title: str,
+        row_labels: list[int | str],
+        col_labels: list[int | str] | None = None,
     ) -> None:
         """
-        Saves a plot of the provided data.
+        Save a labeled 2D matrix (e.g., confusion matrix or cross-metrics) as CSV.
 
         Args:
-            path (Path): Subdirectory where the plot will be saved.
-            filename (str): Name of the file to save.
-            save_format (str): Format for saving the plot. Can be 'png' or 'svg'.
-            ylabel (str): Label for the y-axis.
-            title (str): Title of the plot.
-            show (bool): Whether to show the plot after saving. Defaults to False.
-            data (Dict[str, list[Union[int, float]]]): Data series to plot.
+            path: Subdirectory to save the file in.
+            filename: File name (without `.csv` extension).
+            matrix: 2D matrix data (NumPy array or Torch tensor).
+            row0_col0_title: Top-left header cell (e.g., "True/Pred").
+            row_labels: Labels for rows.
+            col_labels: Labels for columns. If None, uses row_labels.
         """
-        if save_format not in ["png", "svg"]:
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{filename}.csv"
+
+        if isinstance(matrix, torch.Tensor):
+            matrix = matrix.cpu().numpy()
+
+        if col_labels is None:
+            col_labels = row_labels
+
+        # Start the header with row0_col0_title and col_labels
+        header = [row0_col0_title] + list(col_labels)
+
+        # Write the data to a CSV file
+        with open(save_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+
+            # Write header
+            writer.writerow(header)
+
+            # Write rows with row_labels and matrix data
+            for i, row in enumerate(matrix):
+                writer.writerow([row_labels[i]] + list(row))
+
+        if self.verbose:
+            print(f"[Logger] Matrix saved to '{save_path}'")
+
+    def plot_and_save_metrics(
+        self,
+        path: Path,
+        filename: str,
+        save_format: str,
+        ylabel: str,
+        title: str,
+        data: dict[str, list[float]],
+        xlabel: str = "Epochs",
+        show: bool = False,
+        ylim: tuple[float, float] | None = None,
+        markers: bool = False,
+    ) -> None:
+        """
+        Plot and save line graphs for one or more metric series over epochs.
+
+        Args:
+            path: Directory to save the plot.
+            filename: File name (without extension).
+            save_format: File format ('png' or 'svg').
+            ylabel: Label for the Y-axis.
+            title: Title of the plot.
+            data: Dictionary mapping label to Y-axis data series.
+            xlabel: Label for the X-axis. Defaults to "Epochs".
+            show: Whether to display the plot interactively.
+            ylim: Optional (min, max) for Y-axis limits.
+            markers: Whether to add point markers to lines.
+        """
+        if save_format not in {"png", "svg"}:
             raise ValueError("Invalid save_format. Only 'png' and 'svg' are supported.")
 
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{filename}.{save_format}"
 
-        # create the plot
         plt.figure(figsize=(12, 9), layout="compressed")
 
-        # plot each data series
+        max_len = max(len(values) for values in data.values())
         for label, values in data.items():
-            plt.plot(values, label=label)
+            plt.plot(range(1, len(values) + 1), values, label=label, marker="o" if markers else None)
 
-        # add labels, title, and legend
-        plt.xlabel("Epochs")
+        plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(title)
-        plt.xticks(range(1, len(values) + 1))
+        plt.xticks(range(1, max_len + 1))
         plt.legend(loc="best")
 
-        # save the plot
+        if ylim:
+            plt.ylim(*ylim)
+
         plt.savefig(save_path, format=save_format, bbox_inches="tight")
 
-        # show the plot if specified
         if show:
             plt.show()
 
-        # close the plot to avoid memory issues in long training runs
         plt.close()
 
         if self.verbose:
-            print(f"[Logger]: Plot saved to {save_path}")
+            print(f"[Logger] Plot saved to '{save_path}'")
 
-    def save_weights(self, path: Path, filename: str, model: nn.Module, only_state_dict: bool = True) -> None:
+    def save_weights(
+        self,
+        path: Path,
+        filename: str,
+        model: nn.Module,
+        epoch: int,
+        only_state_dict: bool = True,
+    ) -> None:
         """
-        Saves the model weights.
+        Save model weights in .pth format, including epoch in filename.
 
         Args:
-            path (Path): Subdirectory where the model weights will be saved.
-            filename (str): Name of the file to save.
-            model (nn.Module): The model whose weights are to be saved.
-            only_state_dict (bool): Whether to save only the state_dict. Defaults to True.
+            path: Subdirectory to save the weights.
+            filename: File name (without extension).
+            model: PyTorch model.
+            epoch: The epoch number to include in the filename.
+            only_state_dict: Save only model state dict. Defaults to True.
         """
+
+        original_device = next(model.parameters()).device
+
+        # Update filename to include epoch number
+        filename_with_epoch = f"{filename}_epoch_{epoch}"
+
+        # Ensure the directory exists
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.pth"
 
-        if only_state_dict:
-            torch.save(model.state_dict(), save_path)
-        else:
-            torch.save(model, save_path)
+        # Define full save path with '.pth' extension
+        save_path = save_dir / f"{filename_with_epoch}.pth"
+
+        try:
+            # Save either the entire model or just the state dict
+            if only_state_dict:
+                torch.save(model.cpu().state_dict(), save_path)
+            else:
+                torch.save(model.cpu(), save_path)
+
+            if self.verbose:
+                print(f"[Logger] Model weights saved to '{save_path}'")
+
+            model.to(original_device)  # restore model to original device
+
+        except Exception as e:
+            print(f"[Error]: Failed to save model weights. Error: {e}")
+            raise
+
+    def save_image_predictions(
+        self,
+        path: Path,
+        filename: str,
+        model: nn.Module,
+        dataset: Dataset,
+        nrows: int,
+        ncols: int,
+        save_grid: bool,
+        show_grid: bool,
+        clamp: bool = True,
+    ) -> None:
+        """
+        Save individual input images with predicted and true labels as filenames.
+        Optionally, save a grid of the first (nrows × ncols) predictions.
+
+        Args:
+            path: Directory where the images will be saved.
+            filename: Base name for the grid image file.
+            model: Trained PyTorch model.
+            dataset: Dataset to draw examples from.
+            nrows: Number of rows for grid.
+            ncols: Number of columns for grid.
+            save_grid: Whether to save a large grid image.
+            show_grid: Whether to display the grid image after saving.
+            device: Device to run inference on.
+            clamp: Clamp float image data to [0, 1] before saving. Defaults to True.
+        """
+        original_device = next(model.parameters()).device
+
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        model.cpu().eval()
+
+        batch_size = nrows * ncols if save_grid else 64
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+        data = next(iter(dataloader))
+        images, targets = data[0], data[1]
+        preds = model(images.cpu()).argmax(dim=1).cpu()
+        model.to(original_device)  # restore model to original device
+
+        # Save individual images
+        for i, (img, label, pred) in enumerate(zip(images, targets, preds)):
+            if clamp and torch.is_floating_point(img):
+                img = img.clamp(0, 1)
+            img_to_save = (img * 255).to(torch.uint8)
+            save_path = save_dir / filename / f"img_{i:04d}_true_{label}_pred_{pred}.png"
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            write_png(img_to_save, save_path)
+
+        if save_grid:
+            _, axs = plt.subplots(nrows, ncols, figsize=(ncols * 1.5, nrows * 1.5), layout="constrained")
+            plt.suptitle(f"First {nrows * ncols} predictions")
+
+            for i in range(nrows):
+                for j in range(ncols):
+                    idx = i * ncols + j
+                    img = images[idx]
+                    if clamp and torch.is_floating_point(img):
+                        img = img.clamp(0, 1)
+                    axs[i, j].imshow(img.permute(1, 2, 0), cmap="gray")
+                    axs[i, j].set_title(f"t:{targets[idx]}, p:{preds[idx]}")
+                    axs[i, j].axis("off")
+
+            grid_path = save_dir / f"{filename}_overview.png"
+            plt.savefig(grid_path, format="png", bbox_inches="tight")
+
+            if show_grid:
+                plt.show()
+
+            plt.close()
 
         if self.verbose:
-            print(f"[Logger]: Model weights saved to {save_path}")
+            print(f"[Logger] Saved prediction images to '{save_dir}'")
+            if save_grid:
+                print(f"[Logger] Saved grid image to '{grid_path}'")
 
-    def save_demo(self, path, filename, model, dataset, nrows, ncols, show, device, clamp=True) -> None:
+    def save_trigger_pattern(
+        self,
+        path: Path,
+        filename: str,
+        trigger_policy: v2.Transform,
+        bg_size: tuple[int, int, int],
+        bg_color: float,
+        dataset: Dataset | None = None,
+        n_samples: int = 0,
+        clamp: bool = True,
+        show: bool = False,
+    ) -> None:
         """
-        Saves a demo image of the model predictions.
+        Save a trigger pattern on a uniform background and optionally on real samples.
 
         Args:
-            path (Path): Subdirectory where the demo will be saved.
-            filename (str): Name of the file to save.
-            model (nn.Module): The model to evaluate.
-            dataset: Dataset to sample demo images from.
-            nrows (int): Number of rows in the demo plot.
-            ncols (int): Number of columns in the demo plot.
-            show (bool): Whether to display the demo plot after saving.
-            device (torch.device): Device to run the model on.
+            path: Directory to save images.
+            filename: Base filename (without extension).
+            trigger_policy: Trigger transform with a `.name` attribute.
+            bg_size: Shape of the background (C, H, W).
+            bg_color: Float value to fill the background [0, 1].
+            dataset: Optional dataset to draw real images from.
+            n_samples: Number of real images to apply the trigger to.
+            clamp: Clamp float images to [0, 1] before saving.
+            show: Whether to display the background image.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.png"
 
-        data = next(iter(DataLoader(dataset, batch_size=nrows * ncols, shuffle=False)))
-
-        labels = data[1].to("cpu")
-        model.to(device)
-
-        model.eval()
-        with torch.no_grad():
-            predictions = model(data[0].to(device)).argmax(dim=1).cpu()
-
-        # plot
-        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 1.5, nrows * 1.5), layout="constrained")
-        plt.suptitle(f"First {nrows * ncols} images of {filename}")
-        for i in range(nrows):
-            for j in range(ncols):
-                if clamp and torch.is_floating_point(data[0][i * ncols + j]):
-                    img = torch.clamp(data[0][i * ncols + j], 0, 1)
-                axs[i, j].imshow(img.permute(1, 2, 0), cmap="gray")
-                axs[i, j].set_title(f"t:{labels[i * ncols + j].item()},p:{predictions[i * ncols + j].item()}")
-                axs[i, j].axis("off")
-
-        # save the plot
-        plt.savefig(save_path, format="png", bbox_inches="tight")
-
-        if show:
-            plt.show()
-
-        # close the plot to avoid memory issues in long training runs
-        plt.close()
-
-        if self.verbose:
-            print(f"[Logger]: Demo saved to {save_path}")
-
-    def save_trigger(self, path, filename, trigger_policy, bg_size, bg_color, show) -> None:
-        """
-        Args:
-            path (Path): Subdirectory where the demo will be saved.
-            filename (str): Name of the file to save.
-            show (bool): Whether to display the demo plot after saving.
-        """
-        save_dir = self.root / path
-        save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{filename}.png"
-
+        # Save the uniform background trigger visualization
         bg = torch.full(size=bg_size, fill_value=bg_color, dtype=torch.float32)
         poisoned_bg = trigger_policy(bg)
+        if clamp and torch.is_floating_point(poisoned_bg):
+            poisoned_bg = poisoned_bg.clamp(0, 1)
 
-        # plot
-        plt.figure(figsize=(9, 6), layout="compressed")
-        plt.imshow(poisoned_bg.permute(1, 2, 0), vmin=0, vmax=1, cmap="gray")
-        plt.title(trigger_policy.name)
+        demo_path = save_dir / f"{filename}_{trigger_policy.name}_{bg_size[1]}x{bg_size[2]}.png"
+        demo_path.parent.mkdir(parents=True, exist_ok=True)
+        img_to_save = (poisoned_bg * 255).to(torch.uint8)
+        write_png(img_to_save, demo_path)
 
-        # save the plot
-        plt.savefig(save_path, format="PNG", bbox_inches="tight")
-
-        # show the plot if specified
         if show:
+            plt.imshow(poisoned_bg.permute(1, 2, 0), cmap="gray")
+            plt.title(f"Trigger: {trigger_policy.name}")
+            plt.axis("off")
             plt.show()
 
-        # close the plot to avoid memory issues in long training runs
-        plt.close()
-
         if self.verbose:
-            print(f"[Logger]: Demo Trigger saved to {save_path}")
+            print(f"[Logger] Trigger background image saved to '{demo_path}'")
 
+        # Optionally save triggered versions of real dataset samples
+        if dataset and n_samples > 0:
+            subdir = save_dir / filename
+            subdir.mkdir(parents=True, exist_ok=True)
 
-if __name__ == "__main__":
-    from torch import nn, optim
+            dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
+            images, labels = next(iter(dataloader))
 
-    log_dir = Path("./logs/temp")
-    logger = Logger(log_dir, include_date=True, verbose=True)
+            for i in range(min(n_samples, len(images))):
+                img = images[i]
+                label = labels[i]
 
-    # save metrics in csv file
-    metrics_1 = {
-        "epoch": 1,
-        "lr": 0.001,
-        "train_loss": 0.5,
-        "val_loss": 0.45,
-        "train_cda": 0.87,
-        "val_cda": 0.17,
-        "train_asr": 0.47,
-        "val_asr": 0.37,
-    }
-    logger.save_metrics(path=Path("train-val"), filename="report", **metrics_1)
+                poisoned_img = trigger_policy(img)
+                if clamp and torch.is_floating_point(poisoned_img):
+                    poisoned_img = poisoned_img.clamp(0, 1)
 
-    metrics_2 = {
-        "epoch": 2,
-        "lr": 0.1,
-        "train_loss": 0.55,
-        "val_loss": 0.65,
-        "train_cda": 0.57,
-        "val_cda": 0.16,
-        "train_asr": 0.27,
-        "val_asr": 0.3356,
-    }
-    logger.save_metrics(path=Path("train-val"), filename="report", **metrics_2)
+                img_to_save = (poisoned_img * 255).to(torch.uint8)
+                save_path = subdir / f"img_{i:04d}_label_{label}_triggered.png"
+                write_png(img_to_save, save_path)
 
-    metrics_3 = {
-        "epoch": 3,
-        "lr": 0.01,
-        "train_loss": 0.51,
-        "val_loss": 0.25,
-        "train_cda": 0.83,
-        "val_cda": 0.47,
-        "train_asr": 0.411,
-        "val_asr": 0.327,
-    }
-    logger.save_metrics(path=Path("train-val"), filename="report", **metrics_3)
-
-    metrics_4 = {
-        "test_loss": 0.51,
-        "test_cda": 0.83,
-        "test_asr": 0.411,
-    }
-    logger.save_metrics(path=Path("test"), filename="report", **metrics_4)
-
-    # example hyperparameters to save
-    optimizer = optim.SGD(params=[nn.Parameter()], lr=0.1)
-    hyperparameters = {"batch_size": 32, "optimizer": optimizer.state_dict()}
-    logger.save_hyperparameters(path=Path("hyperparameters"), filename="training_params", **hyperparameters)
-
-    # example confusion matrix
-    cm = np.array([[50, 10, 0], [5, 35, 5], [15, 5, 45]])
-    unique_labels = ["Airplane", "Cat", "Star"]
-    logger.save_confusion_matrix(path=Path("test"), filename="confusion_matrix", cm=cm, unique_labels=unique_labels)
-
-    # Example plot data
-    train_loss = [0.6, 0.5, 0.4, 0.3, 0.2]
-    val_loss = [0.55, 0.45, 0.40, 0.35, 0.30]
-    logger.save_plot(
-        path=Path("plots"),
-        filename="loss_plot_per_epoch",
-        save_format="png",
-        ylabel="Loss",
-        title="Train and Validation loss over epochs",
-        show=True,
-        train_loss=train_loss,
-        val_loss=val_loss,
-    )
-
-    train_cda = [0.65, 0.9, 0.47, 0.23, 0.4]
-    val_cda = [0.55, 0.34, 0.55, 0.45, 0.21]
-    logger.save_plot(
-        path=Path("plots"),
-        filename="cda_plot_per_epoch",
-        save_format="svg",
-        ylabel="CDA",
-        title="Train and Validation CDA over epochs",
-        show=True,
-        train_cda=train_cda,
-        val_cda=val_cda,
-    )
-
-    # example model (a simple NN)
-    model_1 = nn.Sequential(nn.Linear(10, 5), nn.ReLU(), nn.Linear(5, 2))
-    logger.save_weights(
-        path=Path("train-val/checkpoints"), filename="epoch_1_parameters", model=model_1, only_state_dict=True
-    )
-    model_2 = nn.Sequential(nn.Linear(10, 5), nn.ReLU(), nn.Linear(5, 2))
-    logger.save_weights(path=Path("test/checkpoints"), filename="parameters", model=model_2, only_state_dict=True)
+            if self.verbose:
+                print(f"[Logger] Saved {min(n_samples, len(images))} triggered samples to '{subdir}'")

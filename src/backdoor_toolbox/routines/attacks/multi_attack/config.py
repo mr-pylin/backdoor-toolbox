@@ -86,11 +86,11 @@ config = {
     "test": {
         "test_batch_size": 128,
     },
-    "log": {
+    "logger": {
         "root": "./logs/attack/multi_attack",
-        "include_date": True,
         "config": {
-            "path": "src/backdoor_toolbox/routines/attacks/multi_attack",
+            "src_path": "src/backdoor_toolbox/routines/attacks/multi_attack",
+            "dst_path": "",
             "filename": "config",
         },
         "hyperparameters": {
@@ -98,47 +98,57 @@ config = {
             "filename": "hyperparameters",
         },
         "metrics": {
-            "train_path": "sp{0}/train_val",
-            "test_path": "sp{0}/test",
+            "train_path": "sp{0}/train_val/metrics",
+            "test_path": "sp{0}/test/metrics",
             "filename": "report",
         },
         "weights": {
             "path": "sp{0}/train_val/weights",
+            "filename": "model",
             "only_state_dict": True,
         },
-        "plot": {
-            "path": "sp{0}/train_val/plots",
+        "plot_metrics": {
+            "path": "sp{0}/train_val/metrics",
             "save_format": "svg",
+            "show": False,
+            "markers": True,
             "metrics": [
                 {
                     "filename": "loss",
                     "ylabel": "Loss",
                     "title": "Loss over time",
-                    "show": False,
                 },
                 {
-                    "filename": "asr",
-                    "ylabel": "ASR",
-                    "title": "ASR over time",
-                    "show": False,
-                },
-                {
-                    "filename": "cda",
+                    "filename": "clean_data_accuracy",
                     "ylabel": "CDA",
                     "title": "CDA over time",
-                    "show": False,
+                },
+                {
+                    "filename": "attack_success_rate",
+                    "ylabel": "ASR",
+                    "title": "ASR over time",
                 },
             ],
         },
         "confusion_matrix": {
-            "path": "sp{0}/test",
+            "path": "sp{0}/test/metrics",
             "filename": "confusion_matrix",
         },
-        "demo": {
+        "pred_demo": {
             "train_path": "sp{0}/train_val/demo",
             "test_path": "sp{0}/test/demo",
             "nrows": 8,
             "ncols": 24,
+            "clamp": True,
+            "save_grid": True,
+            "show_grid": False,
+        },
+        "trigger": {
+            "path": "sp{0}/trigger",
+            "filename": "pattern_demo",
+            "bg_color": 0.0,
+            "n_samples": 16,  # if using the dataset to generate samples
+            "clamp": False,
             "show": False,
         },
     },

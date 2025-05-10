@@ -1,6 +1,6 @@
-from pathlib import Path
 import copy
 import random
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -15,16 +15,12 @@ from backdoor_toolbox.routines.attacks.multi_attack.config import config
 from backdoor_toolbox.routines.base import BaseRoutine
 from backdoor_toolbox.triggers.transform.transform import TriggerSelector
 from backdoor_toolbox.utils.dataset import DatasetSplitter, PoisonedDatasetWrapper
+from backdoor_toolbox.utils.inspectors import GradCAM, ModelInspector
 from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
 
-
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(
-    root=config["log"]["root"],
-    include_date=config["log"]["include_date"],
-    verbose=config["misc"]["verbose"],
-)
+logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
 
 
 class MultiAttackRoutine(BaseRoutine):
@@ -35,7 +31,11 @@ class MultiAttackRoutine(BaseRoutine):
         random.seed(config["misc"]["seed"])
 
         # save config.py file to reproduce the results in future
-        logger.save_configs(config["log"]["config"]["path"], config["log"]["config"]["filename"])
+        logger.save_configs(
+            src_path=Path(config["logger"]["config"]["src_path"]),
+            dst_path=Path(config["logger"]["config"]["dst_path"]),
+            filename=config["logger"]["config"]["filename"],
+        )
 
     def apply(self) -> None:
         # prepare datasets for each service provider including train, val, test sets
@@ -62,15 +62,20 @@ class MultiAttackRoutine(BaseRoutine):
             self._test(sp + 1, test_set_cda, test_set_asr, model)
 
         # examine cross model and dataset asr metric
-        self._cross_test(
+        self._analyze_cross_test(
             sp_models,
             [sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
         )
 
-        # TODO: save weights + model arch?
-        # TODO: asr label differnet for sps
+        # feature-map analysis
         # TODO: feature map analysis
+        # self._analyze_feature_maps()
+
+        # grad-cam analysis
         # TODO: GradCAM
+        # self._analyze_grad_cam()
+
+        # TODO: asr label differnet for sps
         # TODO: majority voting
         # TODO: knowledge distillation
 
@@ -204,23 +209,17 @@ class MultiAttackRoutine(BaseRoutine):
             subsets_dict[f"sp{i+1}"]["test_asr"] = poisoned_local_testset
 
             # save trigger face as an image
-            logger.save_trigger(
-                path=f"sp{i+1}",
-                filename="trigger_demo",
+            logger.save_trigger_pattern(
+                path=config["logger"]["trigger"]["path"].format(i + 1),
+                filename=config["logger"]["trigger"]["filename"],
                 trigger_policy=trigger,
                 bg_size=config["dataset"]["image_shape"],
-                bg_color=0,
-                show=False,
+                bg_color=config["logger"]["trigger"]["bg_color"],
+                dataset=subset,
+                n_samples=config["logger"]["trigger"]["n_samples"],
+                clamp=config["logger"]["trigger"]["clamp"],
+                show=config["logger"]["trigger"]["show"],
             )
-
-        # for i in range(7):
-        #     print(subsets_dict[f"sp{i+1}"]["train"].dataset.clean_transform)
-        #     print(subsets_dict[f"sp{i+1}"]["train"].dataset.poison_transform)
-        #     print(subsets_dict[f"sp{i+1}"]["val"].dataset.clean_transform)
-        #     print(subsets_dict[f"sp{i+1}"]["val"].dataset.poison_transform)
-        #     print(subsets_dict[f"sp{i+1}"]["test_asr"].clean_transform)
-        #     print(subsets_dict[f"sp{i+1}"]["test_asr"].poison_transform)
-        #     print("-" * 50)
 
         # if finetune subset is present, save the indices in a .pth file for defense phase
         if config["dataset"]["extract_finetune_subset"]:
@@ -276,7 +275,7 @@ class MultiAttackRoutine(BaseRoutine):
         if config["model"]["extract_configuration"]:
             torch.save(
                 chosen_model_configs,
-                f"{logger.root}/models_configuration.pth",
+                f"{logger.root}/models_configuration_dict.pth",
             )
 
         # initialize models for each service provider
@@ -284,7 +283,7 @@ class MultiAttackRoutine(BaseRoutine):
 
             # log
             if config["misc"]["verbose"]:
-                print(f"[Model]: model {i+1}: ", end="")
+                print(f"[Model] model {i+1}: ", end="")
 
             model_cls = getattr(
                 self._import_package(f"{config["model"]["root"]}.{sp_values["file"]}"),
@@ -294,7 +293,7 @@ class MultiAttackRoutine(BaseRoutine):
             # initialize the model
             model = model_cls(
                 arch=sp_values["arch"],
-                in_features=config["dataset"]["image_shape"][0],
+                in_channels=config["dataset"]["image_shape"][0],
                 num_classes=config["dataset"]["num_classes"],
                 weights=sp_values["weights"],
                 device=config["misc"]["device"],
@@ -336,8 +335,8 @@ class MultiAttackRoutine(BaseRoutine):
 
         # store hyperparameters as a json file
         logger.save_hyperparameters(
-            Path(config["log"]["hyperparameters"]["path"].format(sp_idx)),
-            config["log"]["hyperparameters"]["filename"],
+            path=Path(config["logger"]["hyperparameters"]["path"].format(sp_idx)),
+            filename=config["logger"]["hyperparameters"]["filename"],
             epochs=epochs,
             mean_per_channel=self.mean_per_sp[sp_idx - 1],
             std_per_channel=self.std_per_sp[sp_idx - 1],
@@ -419,15 +418,15 @@ class MultiAttackRoutine(BaseRoutine):
             # print results per epoch in the standard output
             if config["misc"]["verbose"]:
                 print(
-                    f"[Train]: epoch {epoch:0{len(str(epochs))}}/{epochs} -> lr: {scheduler.get_last_lr()[0]:.5f} | "
-                    f"train[loss: {train_loss:.5f} - asr: {train_asr*100:5.2f}% - cda: {train_cda*100:5.2f}%] | "
-                    f"validation[loss: {val_loss:.5f} - asr: {val_asr*100:5.2f}% - cda: {val_cda*100:5.2f}%]"
+                    f"[Train] epoch {epoch:0{len(str(epochs))}}/{epochs} -> lr: {scheduler.get_last_lr()[0]:.5f} | "
+                    f"train[loss: {train_loss:.5f} - cda: {train_cda*100:5.2f}% - asr: {train_asr*100:5.2f}%] | "
+                    f"validation[loss: {val_loss:.5f} - cda: {val_cda*100:5.2f}% - asr: {val_asr*100:5.2f}%]"
                 )
 
             # store metrics as a csv file for each epoch
             logger.save_metrics(
-                Path(config["log"]["metrics"]["train_path"].format(sp_idx)),
-                config["log"]["metrics"]["filename"],
+                path=Path(config["logger"]["metrics"]["train_path"].format(sp_idx)),
+                filename=config["logger"]["metrics"]["filename"],
                 epoch=epoch,
                 lr=scheduler.get_last_lr()[0],
                 train_loss=train_loss,
@@ -440,44 +439,51 @@ class MultiAttackRoutine(BaseRoutine):
 
             # store weights and biases as a .pth file for each epoch
             logger.save_weights(
-                Path(config["log"]["weights"]["path"].format(sp_idx)),
-                f"epoch_{epoch}",
-                model,
-                only_state_dict=config["log"]["weights"]["only_state_dict"],
+                path=Path(config["logger"]["weights"]["path"].format(sp_idx)),
+                filename=config["logger"]["weights"]["filename"],
+                model=model,
+                epoch=epoch,
+                only_state_dict=config["logger"]["weights"]["only_state_dict"],
             )
 
         # store and/or plot train and validation metrics per epoch
-        for metric in config["log"]["plot"]["metrics"]:
+        # y_min = min(min(train_cda_per_epoch), min(val_cda_per_epoch), min(train_asr_per_epoch), min(val_asr_per_epoch))
+        # y_max = max(max(train_cda_per_epoch), max(val_cda_per_epoch), max(train_asr_per_epoch), max(val_asr_per_epoch))
+        for metric in config["logger"]["plot_metrics"]["metrics"]:
             if metric["filename"] == "loss":
-                data = {"train_loss": train_loss_per_epoch, "val_loss": val_loss_per_epoch}
-            elif metric["filename"] == "asr":
-                data = {"train_asr": train_asr_per_epoch, "val_asr": val_asr_per_epoch}
-            elif metric["filename"] == "cda":
-                data = {"train_cda": train_cda_per_epoch, "val_cda": val_cda_per_epoch}
+                data = {"Train": train_loss_per_epoch, "Validation": val_loss_per_epoch}
+            elif metric["filename"] == "clean_data_accuracy":
+                data = {"Train": train_cda_per_epoch, "Validation": val_cda_per_epoch}
+            elif metric["filename"] == "attack_success_rate":
+                data = {"Train": train_asr_per_epoch, "Validation": val_asr_per_epoch}
             else:
                 raise ValueError(f"Unknown metric: {metric["filename"]}")
 
-            logger.save_plot(
-                Path(config["log"]["plot"]["path"].format(sp_idx)),
-                metric["filename"],
-                config["log"]["plot"]["save_format"],
-                metric["ylabel"],
-                metric["title"],
-                metric["show"],
-                **data,
+            logger.plot_and_save_metrics(
+                path=Path(config["logger"]["plot_metrics"]["path"].format(sp_idx)),
+                filename=metric["filename"],
+                save_format=config["logger"]["plot_metrics"]["save_format"],
+                ylabel=metric["ylabel"],
+                title=metric["title"],
+                data=data,
+                show=config["logger"]["plot_metrics"]["show"],
+                # ylim=(y_min, y_max) if metric["filename"].lower() != "loss" else None,
+                ylim=None,
+                markers=config["logger"]["plot_metrics"]["markers"],
             )
 
         # store and/or plot demo images with true and predicted labels
         for data_role, data_value in [("train", train_set), ("val", val_set)]:
-            logger.save_demo(
-                Path(config["log"]["demo"]["train_path"].format(sp_idx)),
-                data_role,
-                model,
-                data_value,
-                config["log"]["demo"]["nrows"],
-                config["log"]["demo"]["ncols"],
-                show=config["log"]["demo"]["show"],
-                device=config["misc"]["device"],
+            logger.save_image_predictions(
+                path=Path(config["logger"]["pred_demo"]["train_path"].format(sp_idx)),
+                filename=data_role,
+                model=model,
+                dataset=data_value,
+                nrows=config["logger"]["pred_demo"]["nrows"],
+                ncols=config["logger"]["pred_demo"]["ncols"],
+                save_grid=config["logger"]["pred_demo"]["save_grid"],
+                show_grid=config["logger"]["pred_demo"]["show_grid"],
+                clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
     def _test(self, sp_idx: int, test_set_cda, test_set_asr, model) -> None:
@@ -562,12 +568,12 @@ class MultiAttackRoutine(BaseRoutine):
 
         # print results in the standard output
         if config["misc"]["verbose"]:
-            print(f"[Test]: test[loss: {test_loss:.5f} - cda: {test_cda*100:5.2f}% - asr: {test_asr*100:5.2f}%]")
+            print(f"[Test] test[loss: {test_loss:.5f} - cda: {test_cda*100:5.2f}% - asr: {test_asr*100:5.2f}%]")
 
         # store metrics as a csv file
         logger.save_metrics(
-            Path(f"{config["log"]["metrics"]["test_path"]}".format(sp_idx)),
-            config["log"]["metrics"]["filename"],
+            path=Path(f"{config["logger"]["metrics"]["test_path"]}".format(sp_idx)),
+            filename=config["logger"]["metrics"]["filename"],
             test_loss=test_loss,
             test_cda=test_cda,
             test_asr=test_asr,
@@ -585,29 +591,29 @@ class MultiAttackRoutine(BaseRoutine):
         ]:
             confmat = MulticlassConfusionMatrix(config["dataset"]["num_classes"])
             cm = confmat(*labels)
-
-            logger.save_confusion_matrix(
-                Path(f"{config["log"]["confusion_matrix"]["path"]}".format(sp_idx)),
-                f"{data_role}_{config["log"]["confusion_matrix"]["filename"]}",
-                cm,
-                "True/Pred",
-                list(range(config["dataset"]["num_classes"])),
+            logger.save_labeled_matrix(
+                path=Path(f"{config['logger']['confusion_matrix']['path']}".format(sp_idx)),
+                filename=f"{data_role}_{config['logger']['confusion_matrix']['filename']}",
+                matrix=cm,
+                row0_col0_title="True/Pred",  # Title for the top-left header cell
+                row_labels=list(range(config["dataset"]["num_classes"])),  # Class labels
             )
 
         # store and/or plot demo images with true and predicted labels
         for data_role, data_value in [("test_cda", test_set_cda), ("test_asr", test_set_asr)]:
-            logger.save_demo(
-                Path(f"{config["log"]["demo"]["test_path"]}".format(sp_idx)),
-                data_role,
-                model,
-                data_value,
-                config["log"]["demo"]["nrows"],
-                config["log"]["demo"]["ncols"],
-                show=config["log"]["demo"]["show"],
-                device=config["misc"]["device"],
+            logger.save_image_predictions(
+                path=Path(f"{config["logger"]["pred_demo"]["test_path"]}".format(sp_idx)),
+                filename=data_role,
+                model=model,
+                dataset=data_value,
+                nrows=config["logger"]["pred_demo"]["nrows"],
+                ncols=config["logger"]["pred_demo"]["ncols"],
+                save_grid=config["logger"]["pred_demo"]["save_grid"],
+                show_grid=config["logger"]["pred_demo"]["show_grid"],
+                clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
-    def _cross_test(self, models, test_sets_asr) -> None:
+    def _analyze_cross_test(self, models, test_sets_asr) -> None:
 
         asr_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
 
@@ -646,10 +652,10 @@ class MultiAttackRoutine(BaseRoutine):
 
                 asr_metrics[i, j] = test_asr
 
-        logger.save_confusion_matrix(
-            Path(""),
-            "cross_asr_test",
-            asr_metrics,
-            "sp_model/sp_dataset",
-            list(range(config["dataset"]["num_subsets"])),
+        logger.save_labeled_matrix(
+            path=Path(""),  # Empty path or specify your desired directory here
+            filename="cross_test_asr",  # File name
+            matrix=asr_metrics,  # Metrics to log
+            row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
+            row_labels=list(range(config["dataset"]["num_subsets"])),  # Subset labels
         )

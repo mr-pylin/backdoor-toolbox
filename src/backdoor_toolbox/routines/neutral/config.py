@@ -45,11 +45,11 @@ config = {
     "test": {
         "test_batch_size": 128,
     },
-    "log": {
-        "root": "./logs/neutral/neutral",
-        "include_date": True,
+    "logger": {
+        "root": "./logs/neutral",
         "config": {
-            "path": "src/backdoor_toolbox/routines/neutral",
+            "src_path": "src/backdoor_toolbox/routines/neutral",
+            "dst_path": "",
             "filename": "config",
         },
         "hyperparameters": {
@@ -57,42 +57,45 @@ config = {
             "filename": "hyperparameters",
         },
         "metrics": {
-            "train_path": "train_val",
-            "test_path": "test",
+            "train_path": "train_val/metrics",
+            "test_path": "test/metrics",
             "filename": "report",
         },
         "weights": {
             "path": "train_val/weights",
+            "filename": "model",
             "only_state_dict": True,
         },
-        "plot": {
-            "path": "train_val/plots",
+        "plot_metrics": {
+            "path": "train_val/metrics",
             "save_format": "svg",
+            "show": False,
+            "markers": True,
             "metrics": [
                 {
                     "filename": "loss",
                     "ylabel": "Loss",
                     "title": "Loss over time",
-                    "show": False,
                 },
                 {
                     "filename": "accuracy",
                     "ylabel": "Accurace",
                     "title": "Accuracy over time",
-                    "show": False,
                 },
             ],
         },
         "confusion_matrix": {
-            "path": "test",
+            "path": "test/metrics",
             "filename": "confusion_matrix",
         },
-        "demo": {
+        "pred_demo": {
             "train_path": "train_val/demo",
             "test_path": "test/demo",
             "nrows": 8,
             "ncols": 24,
-            "show": False,
+            "clamp": True,
+            "save_grid": True,
+            "show_grid": False,
         },
     },
     "misc": {

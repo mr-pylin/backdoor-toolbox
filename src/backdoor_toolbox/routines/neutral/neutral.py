@@ -13,11 +13,7 @@ from backdoor_toolbox.utils.logger import Logger
 
 
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(
-    root=config["log"]["root"],
-    include_date=config["log"]["include_date"],
-    verbose=config["misc"]["verbose"],
-)
+logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
 
 
 class NeutralRoutine(BaseRoutine):
@@ -27,10 +23,11 @@ class NeutralRoutine(BaseRoutine):
         torch.manual_seed(config["misc"]["seed"])
 
         # save current config in the log
-        logger.save_configs(config["log"]["config"]["path"], config["log"]["config"]["filename"])
-
-        # initialize data loaders
-        # test_loader = DataLoader(test_set, batch_size=config["test"]["test_batch_size"], shuffle=False)
+        logger.save_configs(
+            src_path=Path(config["logger"]["config"]["src_path"]),
+            dst_path=Path(config["logger"]["config"]["dst_path"]),
+            filename=config["logger"]["config"]["filename"],
+        )
 
     def apply(self) -> None:
         # prepare datasets
@@ -98,7 +95,7 @@ class NeutralRoutine(BaseRoutine):
         # initialize the model
         model = model_cls(
             arch=config["modules"]["model"]["params"]["arch"],
-            in_features=config["dataset"]["image_shape"][0],
+            in_channels=config["dataset"]["image_shape"][0],
             num_classes=config["dataset"]["num_classes"],
             weights=config["modules"]["model"]["params"]["weights"],
             device=config["misc"]["device"],
@@ -135,8 +132,8 @@ class NeutralRoutine(BaseRoutine):
 
         # store hyperparameters as a json file
         logger.save_hyperparameters(
-            Path(config["log"]["hyperparameters"]["path"]),
-            config["log"]["hyperparameters"]["filename"],
+            path=Path(config["logger"]["hyperparameters"]["path"]),
+            filename=config["logger"]["hyperparameters"]["filename"],
             epochs=epochs,
             mean_per_channel=self.mean_per_channel,
             std_per_channel=self.std_per_channel,
@@ -217,8 +214,8 @@ class NeutralRoutine(BaseRoutine):
 
             # store metrics as a csv file for each epoch
             logger.save_metrics(
-                Path(config["log"]["metrics"]["train_path"]),
-                config["log"]["metrics"]["filename"],
+                path=Path(config["logger"]["metrics"]["train_path"]),
+                filename=config["logger"]["metrics"]["filename"],
                 epoch=epoch,
                 lr=scheduler.get_last_lr()[0],
                 train_loss=train_loss,
@@ -229,42 +226,49 @@ class NeutralRoutine(BaseRoutine):
 
             # store weights and biases as a .pth file for each epoch
             logger.save_weights(
-                Path(config["log"]["weights"]["path"]),
-                f"epoch_{epoch}",
-                model,
-                only_state_dict=config["log"]["weights"]["only_state_dict"],
+                path=Path(config["logger"]["weights"]["path"]),
+                filename=config["logger"]["weights"]["filename"],
+                model=model,
+                epoch=epoch,
+                only_state_dict=config["logger"]["weights"]["only_state_dict"],
             )
 
         # store and/or plot train and validation metrics per epoch
-        for metric in config["log"]["plot"]["metrics"]:
+        # y_min = min(min(train_acc_per_epoch), min(val_acc_per_epoch))
+        # y_max = max(max(train_acc_per_epoch), max(val_acc_per_epoch))
+        for metric in config["logger"]["plot_metrics"]["metrics"]:
             if metric["filename"] == "loss":
-                data = {"train_loss": train_loss_per_epoch, "val_loss": val_loss_per_epoch}
+                data = {"Train": train_loss_per_epoch, "Validation": val_loss_per_epoch}
             elif metric["filename"] == "accuracy":
-                data = {"train_acc": train_acc_per_epoch, "val_acc": val_acc_per_epoch}
+                data = {"Train": train_acc_per_epoch, "Validation": val_acc_per_epoch}
             else:
                 raise ValueError(f"Unknown metric: {metric["filename"]}")
 
-            logger.save_plot(
-                Path(config["log"]["plot"]["path"]),
-                metric["filename"],
-                config["log"]["plot"]["save_format"],
-                metric["ylabel"],
-                metric["title"],
-                metric["show"],
-                **data,
+            logger.plot_and_save_metrics(
+                path=Path(config["logger"]["plot_metrics"]["path"]),
+                filename=metric["filename"],
+                save_format=config["logger"]["plot_metrics"]["save_format"],
+                ylabel=metric["ylabel"],
+                title=metric["title"],
+                data=data,
+                show=config["logger"]["plot_metrics"]["show"],
+                # ylim=(y_min, y_max) if metric["filename"].lower() != "loss" else None,
+                ylim=None,
+                markers=config["logger"]["plot_metrics"]["markers"],
             )
 
         # store and/or plot demo images with true and predicted labels
         for data_role, data_value in [("train", train_set), ("val", val_set)]:
-            logger.save_demo(
-                Path(config["log"]["demo"]["train_path"]),
-                data_role,
-                model,
-                data_value,
-                config["log"]["demo"]["nrows"],
-                config["log"]["demo"]["ncols"],
-                show=config["log"]["demo"]["show"],
-                device=config["misc"]["device"],
+            logger.save_image_predictions(
+                path=Path(config["logger"]["pred_demo"]["train_path"]),
+                filename=data_role,
+                model=model,
+                dataset=data_value,
+                nrows=config["logger"]["pred_demo"]["nrows"],
+                ncols=config["logger"]["pred_demo"]["ncols"],
+                save_grid=config["logger"]["pred_demo"]["save_grid"],
+                show_grid=config["logger"]["pred_demo"]["show_grid"],
+                clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
     def _test(self, test_set, model: nn.Module) -> None:
@@ -316,8 +320,8 @@ class NeutralRoutine(BaseRoutine):
 
         # store metrics as a csv file
         logger.save_metrics(
-            Path(config["log"]["metrics"]["test_path"]),
-            config["log"]["metrics"]["filename"],
+            path=Path(config["logger"]["metrics"]["test_path"]),
+            filename=config["logger"]["metrics"]["filename"],
             test_loss=test_loss,
             test_acc=test_acc,
         )
@@ -326,22 +330,23 @@ class NeutralRoutine(BaseRoutine):
         predictions, true_labels = map(torch.tensor, [predictions, true_labels])
         confmat = MulticlassConfusionMatrix(config["dataset"]["num_classes"])
         cm = confmat(predictions, true_labels)
-        logger.save_confusion_matrix(
-            Path(config["log"]["confusion_matrix"]["path"]),
-            config["log"]["confusion_matrix"]["filename"],
-            cm,
-            "True/Pred",
-            list(range(config["dataset"]["num_classes"])),
+        logger.save_labeled_matrix(
+            path=Path(config["logger"]["confusion_matrix"]["path"]),
+            filename=config["logger"]["confusion_matrix"]["filename"],
+            matrix=cm,
+            row0_col0_title="True/Pred",  # Title for the top-left header cell
+            row_labels=list(range(config["dataset"]["num_classes"])),  # Class labels
         )
 
         # store and/or plot demo images with true and predicted labels
-        logger.save_demo(
-            Path(config["log"]["demo"]["test_path"]),
-            "test",
-            model,
-            test_set,
-            config["log"]["demo"]["nrows"],
-            config["log"]["demo"]["ncols"],
-            show=config["log"]["demo"]["show"],
-            device=config["misc"]["device"],
+        logger.save_image_predictions(
+            path=Path(config["logger"]["pred_demo"]["test_path"]),
+            filename="test",
+            model=model,
+            dataset=test_set,
+            nrows=config["logger"]["pred_demo"]["nrows"],
+            ncols=config["logger"]["pred_demo"]["ncols"],
+            save_grid=config["logger"]["pred_demo"]["save_grid"],
+            show_grid=config["logger"]["pred_demo"]["show_grid"],
+            clamp=config["logger"]["pred_demo"]["clamp"],
         )
