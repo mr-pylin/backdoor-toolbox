@@ -56,20 +56,34 @@ class MultiAttackRoutine(BaseRoutine):
             model = sp_models[sp]
 
             # train and validate
-            self._train_and_validate(sp + 1, train_set, val_set, model)
+            self._train_and_validate(
+                sp_idx=sp + 1,
+                train_set=train_set,
+                val_set=val_set,
+                model=model,
+            )
 
             # test
-            self._test(sp + 1, test_set_cda, test_set_asr, model)
+            self._test(
+                sp_idx=sp + 1,
+                test_set_cda=test_set_cda,
+                test_set_asr=test_set_asr,
+                model=model,
+            )
 
         # examine cross model and dataset asr metric
         self._analyze_cross_test(
-            sp_models,
-            [sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
+            models=sp_models,
+            test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
         )
 
         # feature-map analysis
         # TODO: feature map analysis
-        # self._analyze_feature_maps()
+        self._analyze_feature_maps(
+            models=sp_models,
+            test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
+            test_set_cda=test_set_cda,
+        )
 
         # grad-cam analysis
         # TODO: GradCAM
@@ -659,3 +673,66 @@ class MultiAttackRoutine(BaseRoutine):
             row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
             row_labels=list(range(config["dataset"]["num_subsets"])),  # Subset labels
         )
+
+    def _analyze_feature_maps(self, models, test_sets_asr, test_set_cda):
+        for i, model in enumerate(models):
+
+            model.eval()
+            model_inspector = ModelInspector(model)
+            for j, test_set_asr in enumerate(test_sets_asr):
+
+                # extract only the first batch of data
+                test_loader_asr = DataLoader(
+                    test_set_asr,
+                    batch_size=config["logger"]["feature_maps"]["num_images"],
+                    shuffle=False,
+                )
+                x_asr, y_asr_true, _, _ = next(iter(test_loader_asr))
+
+                # move data to <device>
+                x_asr, y_asr_true = x_asr.to(config["misc"]["device"]), y_asr_true.to(config["misc"]["device"])
+
+                # extract feature maps per layer per sample
+                feature_maps = model_inspector.extract_feature_maps(
+                    x_asr,
+                    layer_names=config["logger"]["feature_maps"]["layers"],
+                )
+
+                logger.save_feature_maps(
+                    path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/dataset_asr_{j+1}",
+                    feature_dict=feature_maps,
+                    normalize=config["logger"]["feature_maps"]["normalize"],
+                    overview=config["logger"]["feature_maps"]["overview"],
+                )
+
+            # [test set cda]
+            # normalize (standardize) samples if needed
+            # transform orders: [base_transforms - poison_transforms - v2.Normalize]
+            if config["dataset"]["normalize"]:
+                if isinstance(test_set_cda.transform.transforms[-1], v2.Normalize):
+                    del test_set_cda.transform.transforms[-1]
+                test_set_cda.transform.transforms.append(v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i]))
+
+            # extract only the first batch of data
+            test_loader_cda = DataLoader(
+                test_set_cda,
+                batch_size=config["logger"]["feature_maps"]["num_images"],
+                shuffle=False,
+            )
+            x_cda, y_cda_true = next(iter(test_loader_cda))
+
+            # move data to <device>
+            x_cda, y_cda_true = x_cda.to(config["misc"]["device"]), y_cda_true.to(config["misc"]["device"])
+
+            # extract feature maps per layer per sample
+            feature_maps = model_inspector.extract_feature_maps(
+                x_asr,
+                layer_names=config["logger"]["feature_maps"]["layers"],
+            )
+
+            logger.save_feature_maps(
+                path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/dataset_cda",
+                feature_dict=feature_maps,
+                normalize=config["logger"]["feature_maps"]["normalize"],
+                overview=config["logger"]["feature_maps"]["overview"],
+            )

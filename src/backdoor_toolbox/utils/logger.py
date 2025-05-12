@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -464,3 +465,63 @@ class Logger:
 
             if self.verbose:
                 print(f"[Logger] Saved {min(n_samples, len(images))} triggered samples to '{subdir}'")
+
+    def save_feature_maps(
+        self,
+        path: Path,
+        feature_dict: dict[str, torch.Tensor],
+        normalize: bool = True,
+        overview: bool = False,
+    ) -> None:
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        total_saved = 0
+
+        for layer_name, feature_tensor in feature_dict.items():
+            layer_path = save_dir / layer_name
+            layer_path.mkdir(parents=True, exist_ok=True)
+
+            N, A, H, W = feature_tensor.shape  # batch, channels, height, width
+            fig_cols = math.ceil(math.sqrt(A))
+            fig_rows = math.ceil(A / fig_cols)
+
+            for n in range(N):
+                sample_path = layer_path / f"sample_{n}"
+                sample_path.mkdir(parents=True, exist_ok=True)
+
+                for a in range(A):
+                    fmap = feature_tensor[n, a]  # shape (H, W)
+                    if normalize:
+                        fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-5)
+                    fmap_byte = (fmap * 255).byte().unsqueeze(0)  # shape (1, H, W)
+                    write_png(fmap_byte, sample_path / f"feature_{a}.png")
+                    total_saved += 1
+
+                # Save overview plot per sample
+                if overview:
+                    fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols * 2, fig_rows * 2))
+                    axes = axes.flatten()
+
+                    for a in range(A):
+                        fmap = feature_tensor[n, a]
+                        if normalize:
+                            fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-5)
+                        axes[a].imshow(fmap.cpu(), cmap="gray")
+                        axes[a].axis("off")
+                        axes[a].set_title(f"Map {a}", fontsize=8)
+
+                    for a in range(A, len(axes)):
+                        axes[a].axis("off")
+
+                    fig.suptitle(f"{layer_name} | Sample {n}", fontsize=12)
+                    plt.tight_layout()
+                    overview_path = sample_path / f"overview_{layer_name}_sample_{n}.png"
+                    plt.savefig(overview_path, dpi=150)
+                    plt.close(fig)
+
+                    if self.verbose:
+                        print(f"[Logger] Overview image for '{layer_name}', sample {n} saved to '{overview_path}'")
+
+        if self.verbose:
+            print(f"[Logger] Saved {total_saved} feature map images to '{save_dir}'")

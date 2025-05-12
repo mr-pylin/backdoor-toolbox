@@ -93,6 +93,14 @@ config = {
             "dst_path": "",
             "filename": "config",
         },
+        "trigger": {
+            "path": "sp{0}/trigger",
+            "filename": "pattern_demo",
+            "bg_color": 0.0,
+            "n_samples": 16,  # if using the dataset to generate samples
+            "clamp": False,
+            "show": False,
+        },
         "hyperparameters": {
             "path": "sp{0}/train_val",
             "filename": "hyperparameters",
@@ -143,13 +151,12 @@ config = {
             "save_grid": True,
             "show_grid": False,
         },
-        "trigger": {
-            "path": "sp{0}/trigger",
-            "filename": "pattern_demo",
-            "bg_color": 0.0,
-            "n_samples": 16,  # if using the dataset to generate samples
-            "clamp": False,
-            "show": False,
+        "feature_maps": {
+            "path": "sp{0}/analysis/feature_maps",
+            "num_images": 8,
+            "layers": ["model.layer1", "model.layer2", "model.layer3"],
+            "normalize": True,
+            "overview": True,
         },
     },
     "misc": {
