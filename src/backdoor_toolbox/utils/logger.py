@@ -525,3 +525,61 @@ class Logger:
 
         if self.verbose:
             print(f"[Logger] Saved {total_saved} feature map images to '{save_dir}'")
+
+    def save_heatmaps(
+        self,
+        path: Path,
+        overlays_dict: dict[str, torch.Tensor],
+        normalize: bool = True,
+        overview: bool = False,
+    ) -> None:
+        save_dir = self.root / path
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        total_saved = 0
+
+        for layer_name, heatmap_tensor in overlays_dict.items():
+            layer_path = save_dir / layer_name
+            layer_path.mkdir(parents=True, exist_ok=True)
+
+            N, C, H, W = heatmap_tensor.shape  # batch, channel, height, width
+
+            for n in range(N):
+
+                # for a in range(A):
+                hmap = heatmap_tensor[n]  # shape (C, H, W)
+                if normalize:
+                    hmap = (hmap - hmap.min()) / (hmap.max() - hmap.min() + 1e-5)
+                fmap_byte = (hmap * 255).clamp(0, 255).byte()
+                write_png(fmap_byte.cpu(), layer_path / f"feature_{n}.png")
+                total_saved += 1
+
+            # Save overview plot per sample
+            if overview:
+                fig_cols = math.ceil(math.sqrt(N))
+                fig_rows = math.ceil(N / fig_cols)
+                fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols * 2, fig_rows * 2))
+                axes = axes.flatten()
+
+                for n in range(N):
+                    hmap = heatmap_tensor[n]
+                    if normalize:
+                        hmap = (hmap - hmap.min()) / (hmap.max() - hmap.min() + 1e-5)
+                    axes[n].imshow(hmap.permute(1, 2, 0).cpu(), cmap="gray")
+                    axes[n].axis("off")
+                    axes[n].set_title(f"Map {n}", fontsize=8)
+
+                for n in range(N, len(axes)):
+                    axes[n].axis("off")
+
+                fig.suptitle(f"{layer_name} | Sample {n}", fontsize=12)
+                plt.tight_layout()
+                overview_path = layer_path / f"overview_{layer_name}_sample_{n}.png"
+                plt.savefig(overview_path, dpi=150)
+                plt.close(fig)
+
+                if self.verbose:
+                    print(f"[Logger] Overview image for '{layer_name}', sample {n} saved to '{overview_path}'")
+
+        if self.verbose:
+            print(f"[Logger] Saved {total_saved} heatmap images to '{save_dir}'")
