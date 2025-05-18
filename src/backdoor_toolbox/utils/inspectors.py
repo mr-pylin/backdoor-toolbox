@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 
-class ModelInspector:
+class FeatureExtractor:
     """
     Utility for extracting intermediate feature maps and layer weights from a nn.Module.
     """
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     x = torch.randn(8, 3, 32, 32)
 
     # model inspector
-    inspector = ModelInspector(model)
+    inspector = FeatureExtractor(model)
 
     # extract a feature map from the chosen layer
     feat_maps = inspector.extract_feature_maps(x, layer_names=["model.layer1", "model.layer2", "model.layer3"])

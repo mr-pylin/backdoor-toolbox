@@ -15,7 +15,7 @@ from backdoor_toolbox.routines.attacks.multi_attack.config import config
 from backdoor_toolbox.routines.base import BaseRoutine
 from backdoor_toolbox.triggers.transform.transform import TriggerSelector
 from backdoor_toolbox.utils.dataset import DatasetSplitter, PoisonedDatasetWrapper
-from backdoor_toolbox.utils.inspectors import GradCAM, ModelInspector
+from backdoor_toolbox.utils.inspectors import GradCAM, FeatureExtractor
 from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
 
@@ -680,7 +680,7 @@ class MultiAttackRoutine(BaseRoutine):
         for i, model in enumerate(models):
 
             model.eval()
-            model_inspector = ModelInspector(model)
+            model_inspector = FeatureExtractor(model)
             for j, test_set_asr in enumerate(test_sets_asr):
 
                 # extract only the first batch of data
