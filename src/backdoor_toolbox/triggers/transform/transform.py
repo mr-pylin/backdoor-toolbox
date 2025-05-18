@@ -425,8 +425,8 @@ if __name__ == "__main__":
 
     # import a trigger image
     transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-    trigger_image_1 = transform(tf.rgb_to_grayscale(read_image(r"./data/blend_trigger/noise.jpg")))
-    trigger_image_2 = transform(tf.rgb_to_grayscale(read_image(r"./data/blend_trigger/kitty.jpg")))
+    trigger_image_1 = transform(tf.rgb_to_grayscale(read_image(r"./assets/blend_trigger/noise.jpg")))
+    trigger_image_2 = transform(tf.rgb_to_grayscale(read_image(r"./assets/blend_trigger/kitty.jpg")))
 
     # solid image
     GRAYSCALE_IMAGE_SIZE = (1, 28, 28)
@@ -460,8 +460,8 @@ if __name__ == "__main__":
 
     # import a trigger image
     transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-    trigger_image_1 = transform(read_image(r"./data/blend_trigger/noise.jpg"))
-    trigger_image_2 = transform(read_image(r"./data/blend_trigger/kitty.jpg"))
+    trigger_image_1 = transform(read_image(r"./assets/blend_trigger/noise.jpg"))
+    trigger_image_2 = transform(read_image(r"./assets/blend_trigger/kitty.jpg"))
 
     # solid image
     RGB_IMAGE_SIZE = (3, 28, 28)

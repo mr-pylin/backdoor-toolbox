@@ -46,9 +46,9 @@ config = {
         ),
         "blend": {
             "bg_paths": [
-                r"./data/blend_trigger/noise.jpg",
-                r"./data/blend_trigger/kitty.jpg",
-                r"./data/blend_trigger/pattern.jpg",
+                r"./assets/blend_trigger/noise.jpg",
+                r"./assets/blend_trigger/kitty.jpg",
+                r"./assets/blend_trigger/pattern.jpg",
             ],
         },
     },
