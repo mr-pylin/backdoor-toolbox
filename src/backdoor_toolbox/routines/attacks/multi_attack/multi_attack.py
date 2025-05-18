@@ -78,7 +78,6 @@ class MultiAttackRoutine(BaseRoutine):
         )
 
         # feature-map analysis
-        # TODO: feature map analysis
         self._analyze_feature_maps(
             models=sp_models,
             test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
@@ -86,8 +85,11 @@ class MultiAttackRoutine(BaseRoutine):
         )
 
         # grad-cam analysis
-        # TODO: GradCAM
-        # self._analyze_grad_cam()
+        self._analyze_grad_cam(
+            models=sp_models,
+            test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
+            test_set_cda=test_set_cda,
+        )
 
         # TODO: asr label differnet for sps
         # TODO: majority voting
@@ -735,4 +737,65 @@ class MultiAttackRoutine(BaseRoutine):
                 feature_dict=feature_maps,
                 normalize=config["logger"]["feature_maps"]["normalize"],
                 overview=config["logger"]["feature_maps"]["overview"],
+            )
+
+    def _analyze_grad_cam(self, models, test_sets_asr, test_set_cda):
+        for i, model in enumerate(models):
+
+            model.eval()
+            grad_cam = GradCAM(model=model, target_layers=config["logger"]["grad_cam"]["layers"])
+            for j, test_set_asr in enumerate(test_sets_asr):
+
+                # extract only the first batch of data
+                test_loader_asr = DataLoader(
+                    test_set_asr,
+                    batch_size=config["logger"]["grad_cam"]["num_images"],
+                    shuffle=False,
+                )
+                x_asr, y_asr_true, _, _ = next(iter(test_loader_asr))
+
+                # move data to <device>
+                x_asr, y_asr_true = x_asr.to(config["misc"]["device"]), y_asr_true.to(config["misc"]["device"])
+
+                # extract gradcam heatmaps per layer per sample
+                with grad_cam as gc:
+                    heatmaps = gc.generate(x=x_asr, target_class=y_asr_true)
+                overlays = grad_cam.overlay_heatmaps(x_asr, heatmaps, alpha=0.4)
+
+                logger.save_heatmaps(
+                    path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/dataset_asr_{j+1}",
+                    overlays_dict=overlays,
+                    normalize=config["logger"]["grad_cam"]["normalize"],
+                    overview=config["logger"]["grad_cam"]["overview"],
+                )
+
+            # [test set cda]
+            # normalize (standardize) samples if needed
+            # transform orders: [base_transforms - poison_transforms - v2.Normalize]
+            if config["dataset"]["normalize"]:
+                if isinstance(test_set_cda.transform.transforms[-1], v2.Normalize):
+                    del test_set_cda.transform.transforms[-1]
+                test_set_cda.transform.transforms.append(v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i]))
+
+            # extract only the first batch of data
+            test_loader_cda = DataLoader(
+                test_set_cda,
+                batch_size=config["logger"]["grad_cam"]["num_images"],
+                shuffle=False,
+            )
+            x_cda, y_cda_true = next(iter(test_loader_cda))
+
+            # move data to <device>
+            x_cda, y_cda_true = x_cda.to(config["misc"]["device"]), y_cda_true.to(config["misc"]["device"])
+
+            # extract gradcam heatmaps per layer per sample
+            with grad_cam as gc:
+                heatmaps = gc.generate(x=x_cda, target_class=y_cda_true)
+            overlays = grad_cam.overlay_heatmaps(x_cda, heatmaps, alpha=0.4)
+
+            logger.save_heatmaps(
+                path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/dataset_cda",
+                overlays_dict=overlays,
+                normalize=config["logger"]["grad_cam"]["normalize"],
+                overview=config["logger"]["grad_cam"]["overview"],
             )

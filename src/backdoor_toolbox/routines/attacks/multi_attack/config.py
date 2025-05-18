@@ -48,6 +48,7 @@ config = {
             "bg_paths": [
                 r"./data/blend_trigger/noise.jpg",
                 r"./data/blend_trigger/kitty.jpg",
+                r"./data/blend_trigger/pattern.jpg",
             ],
         },
     },
@@ -76,7 +77,7 @@ config = {
     "train_val": {
         "train_test_ratio": (0.8, 0.2),  # (train, test) split
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
-        "epochs": 7,
+        "epochs": 1,
         "train_batch_size": 64,
         "val_batch_size": 128,
         "optimizer": optim.Adam,
@@ -153,7 +154,14 @@ config = {
         },
         "feature_maps": {
             "path": "sp{0}/analysis/feature_maps",
-            "num_images": 8,
+            "num_images": 4,
+            "layers": ["model.layer1", "model.layer2", "model.layer3"],
+            "normalize": True,
+            "overview": True,
+        },
+        "grad_cam": {
+            "path": "sp{0}/analysis/grad_cam",
+            "num_images": 16,
             "layers": ["model.layer1", "model.layer2", "model.layer3"],
             "normalize": True,
             "overview": True,
