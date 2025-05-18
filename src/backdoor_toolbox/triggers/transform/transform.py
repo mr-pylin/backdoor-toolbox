@@ -400,7 +400,7 @@ class TriggerSelector:
 
             elif trigger_cls.__name__ == "InjectBlendTrigger":
                 color = self._random_color(C)
-                alpha = random.uniform(0.1, 0.3)
+                alpha = random.uniform(0.05, 0.15)
                 trigger_image = random.choice(self.blend_images)
                 trigger = trigger_cls(self.image_shape, trigger_image=trigger_image, alpha=alpha)
 
