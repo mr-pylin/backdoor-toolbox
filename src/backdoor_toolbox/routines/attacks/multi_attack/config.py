@@ -73,11 +73,12 @@ config = {
             "weights": None,
         },
         "extract_configuration": True,
+        "extract_path": "sp{0}/model/config.json",
     },
-    "train_val": {
+    "train": {
         "train_test_ratio": (0.8, 0.2),  # (train, test) split
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
-        "epochs": 1,
+        "epochs": 7,
         "train_batch_size": 64,
         "val_batch_size": 128,
         "optimizer": optim.Adam,
@@ -103,21 +104,21 @@ config = {
             "show": False,
         },
         "hyperparameters": {
-            "path": "sp{0}/train_val",
+            "path": "sp{0}/train",
             "filename": "hyperparameters",
         },
         "metrics": {
-            "train_path": "sp{0}/train_val/metrics",
+            "train_path": "sp{0}/train/metrics",
             "test_path": "sp{0}/test/metrics",
             "filename": "report",
         },
         "weights": {
-            "path": "sp{0}/train_val/weights",
+            "path": "sp{0}/model/weights",
             "filename": "model",
             "only_state_dict": True,
         },
         "plot_metrics": {
-            "path": "sp{0}/train_val/metrics",
+            "path": "sp{0}/train/metrics",
             "save_format": "svg",
             "show": False,
             "markers": True,
@@ -144,7 +145,7 @@ config = {
             "filename": "confusion_matrix",
         },
         "pred_demo": {
-            "train_path": "sp{0}/train_val/demo",
+            "train_path": "sp{0}/train/demo",
             "test_path": "sp{0}/test/demo",
             "nrows": 8,
             "ncols": 24,
@@ -161,8 +162,8 @@ config = {
         },
         "grad_cam": {
             "path": "sp{0}/analysis/grad_cam",
-            "num_images": 16,
-            "layers": ["model.layer1", "model.layer2", "model.layer3"],
+            "num_images": 32,
+            "layers": ["model.layer3"],
             "normalize": True,
             "overview": True,
         },

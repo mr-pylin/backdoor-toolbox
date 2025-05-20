@@ -1,4 +1,5 @@
 import copy
+import json
 import random
 from pathlib import Path
 
@@ -205,7 +206,7 @@ class MultiAttackRoutine(BaseRoutine):
             # split poisoned local train set into train/val set
             p_trainset, p_valset = random_split(
                 dataset=poisoned_local_trainset,
-                lengths=config["train_val"]["train_val_ratio"],
+                lengths=config["train"]["train_val_ratio"],
             )
 
             # normalize (standardize) samples if needed
@@ -287,17 +288,16 @@ class MultiAttackRoutine(BaseRoutine):
             else:
                 raise ValueError("both 'random' and 'same' can not be False in the config file")
 
-        # save configuration dict to use in the defense phase
-        if config["model"]["extract_configuration"]:
-            torch.save(
-                chosen_model_configs,
-                f"{logger.root}/models_configuration_dict.pth",
-            )
-
         # initialize models for each service provider
         for i, (sp_name, sp_values) in enumerate(chosen_model_configs.items()):
 
             # log
+            if config["model"]["extract_configuration"]:
+                save_path = Path(f"{logger.root}/{config["model"]["extract_path"].format(i+1)}")
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(save_path, "w") as f:
+                    json.dump(chosen_model_configs[sp_name], f, indent=4)
+
             if config["misc"]["verbose"]:
                 print(f"[Model] model {i+1}: ", end="")
 
@@ -326,18 +326,18 @@ class MultiAttackRoutine(BaseRoutine):
         val_loss_per_epoch, val_cda_per_epoch, val_asr_per_epoch = [], [], []
 
         # initialize data loaders
-        train_loader = DataLoader(train_set, batch_size=config["train_val"]["train_batch_size"], shuffle=True)
-        val_loader = DataLoader(val_set, batch_size=config["train_val"]["val_batch_size"], shuffle=False)
+        train_loader = DataLoader(train_set, batch_size=config["train"]["train_batch_size"], shuffle=True)
+        val_loader = DataLoader(val_set, batch_size=config["train"]["val_batch_size"], shuffle=False)
 
         # initialize criterion, optimizer and lr_scheduler
         criterion = nn.CrossEntropyLoss()
-        optimizer: optim.Optimizer = config["train_val"]["optimizer"](
+        optimizer: optim.Optimizer = config["train"]["optimizer"](
             model.parameters(),
-            **config["train_val"]["optimizer_params"],
+            **config["train"]["optimizer_params"],
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            **config["train_val"]["scheduler_params"],
+            **config["train"]["scheduler_params"],
         )
 
         # initialize train and validation cda (clean data accuracy) and asr (attack success rate) metrics
@@ -347,7 +347,7 @@ class MultiAttackRoutine(BaseRoutine):
         train_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
         val_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
 
-        epochs = config["train_val"]["epochs"]
+        epochs = config["train"]["epochs"]
 
         # store hyperparameters as a json file
         logger.save_hyperparameters(
@@ -673,7 +673,7 @@ class MultiAttackRoutine(BaseRoutine):
             filename="cross_test_asr",  # File name
             matrix=asr_metrics,  # Metrics to log
             row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
-            row_labels=list(range(config["dataset"]["num_subsets"])),  # Subset labels
+            row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
         )
 
     def _analyze_feature_maps(self, models, test_sets_asr, test_set_cda):
