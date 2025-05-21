@@ -15,7 +15,6 @@ class BaseRoutine(ABC):
         _prepare_data: Prepares the dataset and dataloaders for training/testing.
         _prepare_model: Prepares the model with specified weights.
         _import_package: Imports a package dynamically.
-        _calculate_train_set_mean_and_std: Calculates the mean and standard deviation for the training dataset.
     """
 
     @abstractmethod
@@ -79,19 +78,3 @@ class BaseRoutine(ABC):
             return module
         except ModuleNotFoundError as e:
             raise ImportError(f"Error importing package '{package}': {e}")
-
-    def _calculate_train_set_mean_and_std(self, train_set: Dataset) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Calculates the mean and standard deviation of the training dataset.
-
-        Args:
-            train_set (Dataset): The training dataset.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: The mean and standard deviation per channel.
-        """
-        load_entire_train_set_samples: torch.Tensor = next(iter(DataLoader(dataset=train_set, batch_size=len(train_set), shuffle=False)))[0]
-        mean_per_channel = load_entire_train_set_samples.mean(dim=(0, 2, 3)).tolist()
-        std_per_channel = load_entire_train_set_samples.std(dim=(0, 2, 3)).tolist()
-
-        return mean_per_channel, std_per_channel

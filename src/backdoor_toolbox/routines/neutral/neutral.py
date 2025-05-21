@@ -10,7 +10,7 @@ from torchvision.transforms import v2
 from backdoor_toolbox.routines.base import BaseRoutine
 from backdoor_toolbox.routines.neutral.config import config
 from backdoor_toolbox.utils.logger import Logger
-
+from backdoor_toolbox.utils.stats import calculate_mean_and_std
 
 # instantiate a logger to save parameters, plots, weights, ...
 logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
@@ -76,7 +76,7 @@ class NeutralRoutine(BaseRoutine):
 
         # normalize (standardize) samples if needed
         if config["dataset"]["normalize"]:
-            self.mean_per_channel, self.std_per_channel = self._calculate_train_set_mean_and_std(train_set)
+            self.mean_per_channel, self.std_per_channel = calculate_mean_and_std(train_set)
             config["dataset"]["transform"].transforms.append(v2.Normalize(self.mean_per_channel, self.std_per_channel))
         else:
             self.mean_per_channel = None

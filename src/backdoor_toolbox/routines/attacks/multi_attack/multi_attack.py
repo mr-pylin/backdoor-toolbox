@@ -16,9 +16,10 @@ from backdoor_toolbox.routines.attacks.multi_attack.config import config
 from backdoor_toolbox.routines.base import BaseRoutine
 from backdoor_toolbox.triggers.transform.transform import TriggerSelector
 from backdoor_toolbox.utils.dataset import DatasetSplitter, PoisonedDatasetWrapper
-from backdoor_toolbox.utils.inspectors import GradCAM, FeatureExtractor
+from backdoor_toolbox.utils.inspectors import FeatureExtractor, GradCAM
 from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
+from backdoor_toolbox.utils.stats import calculate_mean_and_std
 
 # instantiate a logger to save parameters, plots, weights, ...
 logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
@@ -212,7 +213,7 @@ class MultiAttackRoutine(BaseRoutine):
             # normalize (standardize) samples if needed
             # transform orders: [base_transforms - poison_transforms - v2.Normalize]
             if config["dataset"]["normalize"]:
-                train_set_mean, train_set_std = self._calculate_train_set_mean_and_std(p_trainset)
+                train_set_mean, train_set_std = calculate_mean_and_std(p_trainset)
                 clean_transform.transforms.append(v2.Normalize(train_set_mean, train_set_std))
                 poison_transform.transforms.append(v2.Normalize(train_set_mean, train_set_std))
                 self.mean_per_sp.append(train_set_mean)
