@@ -500,7 +500,12 @@ class Logger:
 
                 # Save overview plot per sample
                 if overview:
-                    fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols * 2, fig_rows * 2))
+                    fig, axes = plt.subplots(
+                        fig_rows,
+                        fig_cols,
+                        figsize=(fig_cols * 2, fig_rows * 2),
+                        layout="compressed",
+                    )
                     axes = axes.flatten()
 
                     for a in range(A):
@@ -509,7 +514,7 @@ class Logger:
                             fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-5)
                         axes[a].imshow(fmap.cpu(), cmap="gray")
                         axes[a].axis("off")
-                        axes[a].set_title(f"Map {a}", fontsize=8)
+                        axes[a].set_title(f"Map {a}")
 
                     for a in range(A, len(axes)):
                         axes[a].axis("off")
@@ -517,7 +522,7 @@ class Logger:
                     fig.suptitle(f"{layer_name} | Sample {n}", fontsize=12)
                     plt.tight_layout()
                     overview_path = sample_path / f"overview_{layer_name}_sample_{n}.png"
-                    plt.savefig(overview_path, dpi=150)
+                    plt.savefig(overview_path, dpi=96)
                     plt.close(fig)
 
                     if self.verbose:
@@ -558,7 +563,12 @@ class Logger:
             if overview:
                 fig_cols = math.ceil(math.sqrt(N))
                 fig_rows = math.ceil(N / fig_cols)
-                fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols * 2, fig_rows * 2))
+                fig, axes = plt.subplots(
+                    fig_rows,
+                    fig_cols,
+                    figsize=(fig_cols * 2, fig_rows * 2),
+                    layout="compressed",
+                )
                 axes = axes.flatten()
 
                 for n in range(N):
