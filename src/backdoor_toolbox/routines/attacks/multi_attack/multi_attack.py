@@ -2,6 +2,7 @@ import copy
 import json
 import random
 from pathlib import Path
+import csv
 
 import torch
 import torch.nn as nn
@@ -241,10 +242,11 @@ class MultiAttackRoutine(BaseRoutine):
 
         # if finetune subset is present, save the indices in a .pth file for defense phase
         if config["dataset"]["extract_finetune_subset"]:
-            torch.save(
-                subsets[-1].indices,
-                f"{logger.root}/finetune_subset_indices.pth",
-            )
+            subsets[-1].indices.sort()
+            with open(f"{logger.root}/finetune_subset_indices.csv", "w", newline="") as f:
+                writer = csv.writer(f)
+                for idx in subsets[-1].indices.tolist():
+                    writer.writerow([idx])
 
         return subsets_dict, test_set_cda
 
