@@ -471,6 +471,7 @@ class Logger:
         path: Path,
         feature_dict: dict[str, torch.Tensor],
         normalize: bool = True,
+        aggregation: bool = False,
         overview: bool = False,
     ) -> None:
         save_dir = self.root / path
@@ -497,6 +498,14 @@ class Logger:
                     fmap_byte = (fmap * 255).byte().unsqueeze(0)  # shape (1, H, W)
                     write_png(fmap_byte, sample_path / f"feature_{a}.png")
                     total_saved += 1
+
+                # Save aggregation plot per sample
+                if aggregation:
+                    fmap = feature_tensor[n].mean(dim=0)
+                    if normalize:
+                        fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-5)
+                    fmap_byte = (fmap * 255).byte().unsqueeze(0)  # shape (1, H, W)
+                    write_png(fmap_byte, sample_path / f"mean_{layer_name}_sample_{n}.png")
 
                 # Save overview plot per sample
                 if overview:

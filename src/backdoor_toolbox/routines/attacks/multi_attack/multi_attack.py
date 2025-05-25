@@ -704,9 +704,10 @@ class MultiAttackRoutine(BaseRoutine):
                 )
 
                 logger.save_feature_maps(
-                    path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/dataset_asr_{j+1}",
+                    path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/poisoned_dataset_{j+1}",
                     feature_dict=feature_maps,
                     normalize=config["logger"]["feature_maps"]["normalize"],
+                    aggregation=config["logger"]["feature_maps"]["aggregation"],
                     overview=config["logger"]["feature_maps"]["overview"],
                 )
 
@@ -736,9 +737,10 @@ class MultiAttackRoutine(BaseRoutine):
             )
 
             logger.save_feature_maps(
-                path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/dataset_cda",
+                path=f"{config["logger"]["feature_maps"]["path"].format(i+1)}/clean_dataset",
                 feature_dict=feature_maps,
                 normalize=config["logger"]["feature_maps"]["normalize"],
+                aggregation=config["logger"]["feature_maps"]["aggregation"],
                 overview=config["logger"]["feature_maps"]["overview"],
             )
 
@@ -766,7 +768,7 @@ class MultiAttackRoutine(BaseRoutine):
                 overlays = grad_cam.overlay_heatmaps(x_asr, heatmaps, alpha=0.4)
 
                 logger.save_heatmaps(
-                    path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/dataset_asr_{j+1}",
+                    path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/poisoned_dataset_{j+1}",
                     overlays_dict=overlays,
                     normalize=config["logger"]["grad_cam"]["normalize"],
                     overview=config["logger"]["grad_cam"]["overview"],
@@ -797,7 +799,7 @@ class MultiAttackRoutine(BaseRoutine):
             overlays = grad_cam.overlay_heatmaps(x_cda, heatmaps, alpha=0.4)
 
             logger.save_heatmaps(
-                path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/dataset_cda",
+                path=f"{config["logger"]["grad_cam"]["path"].format(i+1)}/clean_dataset",
                 overlays_dict=overlays,
                 normalize=config["logger"]["grad_cam"]["normalize"],
                 overview=config["logger"]["grad_cam"]["overview"],

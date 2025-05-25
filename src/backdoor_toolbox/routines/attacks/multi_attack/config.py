@@ -158,6 +158,7 @@ config = {
             "num_images": 4,
             "layers": ["model.layer1", "model.layer2", "model.layer3"],
             "normalize": True,
+            "aggregation": True,
             "overview": True,
         },
         "grad_cam": {
