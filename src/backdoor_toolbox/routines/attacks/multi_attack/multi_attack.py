@@ -635,6 +635,7 @@ class MultiAttackRoutine(BaseRoutine):
     def _analyze_cross_test(self, models, test_sets_asr) -> None:
 
         asr_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
+        cda_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
 
         for i, model in enumerate(models):
 
@@ -657,24 +658,37 @@ class MultiAttackRoutine(BaseRoutine):
 
                 test_loader_asr = DataLoader(test_set_asr, batch_size=config["test"]["test_batch_size"], shuffle=False)
                 test_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
+                test_cda_metric = CleanDataAccuracy().to(config["misc"]["device"])
+
                 with torch.no_grad():
                     for x_asr, y_asr_true, poisoned_mask, y_raw in test_loader_asr:
                         # move data to <device>
                         x_asr, y_asr_true = x_asr.to(config["misc"]["device"]), y_asr_true.to(config["misc"]["device"])
+                        y_raw = y_raw.to(config["misc"]["device"])
 
                         # forward pass
                         y_asr_pred = model(x_asr)
                         test_asr_metric.update(y_asr_pred, poisoned_mask)
+                        test_cda_metric.update(y_asr_pred, y_raw, poisoned_mask)
 
                 # calculate and store metrics
                 test_asr = test_asr_metric.compute().item()
+                test_cda = test_cda_metric.compute().item()
 
                 asr_metrics[i, j] = test_asr
+                cda_metrics[i, j] = test_cda
 
         logger.save_labeled_matrix(
             path=Path(""),  # Empty path or specify your desired directory here
-            filename="cross_test_asr",  # File name
+            filename="cross_test_asr_on_poisoned_dataset",  # File name
             matrix=asr_metrics,  # Metrics to log
+            row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
+            row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
+        )
+        logger.save_labeled_matrix(
+            path=Path(""),  # Empty path or specify your desired directory here
+            filename="cross_test_cda_on_poisoned_dataset",  # File name
+            matrix=cda_metrics,  # Metrics to log
             row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
             row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
         )

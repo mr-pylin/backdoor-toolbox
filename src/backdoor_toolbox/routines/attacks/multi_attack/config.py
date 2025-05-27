@@ -78,7 +78,7 @@ config = {
     "train": {
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
         "train_test_ratio": (0.8, 0.2),  # (train, test) split
-        "epochs": 10,
+        "epochs": 15,
         "train_batch_size": 64,
         "val_batch_size": 128,
         "optimizer": optim.Adam,
