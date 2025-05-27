@@ -76,9 +76,9 @@ config = {
         "extract_path": "sp{0}/model/config.json",
     },
     "train": {
-        "train_test_ratio": (0.8, 0.2),  # (train, test) split
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
-        "epochs": 7,
+        "train_test_ratio": (0.8, 0.2),  # (train, test) split
+        "epochs": 10,
         "train_batch_size": 64,
         "val_batch_size": 128,
         "optimizer": optim.Adam,
@@ -156,7 +156,7 @@ config = {
         "feature_maps": {
             "path": "sp{0}/analysis/feature_maps",
             "num_images": 4,
-            "layers": ["model.layer1", "model.layer2", "model.layer3"],
+            "layers": ["layer1", "layer2", "layer3"],
             "normalize": True,
             "aggregation": True,
             "overview": True,
@@ -164,7 +164,7 @@ config = {
         "grad_cam": {
             "path": "sp{0}/analysis/grad_cam",
             "num_images": 32,
-            "layers": ["model.layer3"],
+            "layers": ["layer3"],
             "normalize": True,
             "overview": True,
         },

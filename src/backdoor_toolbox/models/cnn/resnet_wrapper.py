@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from torch import nn
 from torchvision.models import (
@@ -12,17 +14,10 @@ from torchvision.models import (
     resnet101,
     resnet152,
 )
+from torchvision.models.resnet import BasicBlock, ResNet
 
 
-class CustomResNet(nn.Module):
-    """
-    A ResNet wrapper for small images that also drops the heaviest stage (layer4)
-    to reduce parameters and speed up training.
-    - 3×3 stride=1 conv1
-    - No initial max-pool
-    - Remove layer4 entirely
-    """
-
+class CustomResNet(ResNet):
     RESNET_MODELS = {
         "resnet18": (resnet18, ResNet18_Weights.IMAGENET1K_V1, 256),
         "resnet34": (resnet34, ResNet34_Weights.IMAGENET1K_V1, 256),
@@ -30,7 +25,6 @@ class CustomResNet(nn.Module):
         "resnet101": (resnet101, ResNet101_Weights.IMAGENET1K_V2, 1024),
         "resnet152": (resnet152, ResNet152_Weights.IMAGENET1K_V2, 1024),
     }
-    # The third tuple element is the # output channels of layer3
 
     def __init__(
         self,
@@ -41,43 +35,43 @@ class CustomResNet(nn.Module):
         device: str = "cpu",
         verbose: bool = False,
     ):
-        super().__init__()
-
         if arch not in self.RESNET_MODELS:
             raise ValueError(f"Unsupported arch '{arch}'. Choose from {list(self.RESNET_MODELS)}")
 
         model_fn, default_w, layer3_out = self.RESNET_MODELS[arch]
 
-        # Load pretrained or from file
-        if isinstance(weights, str) and weights.endswith((".pth", ".pt")):
-            self.model = model_fn(weights=None)
-            self.model.load_state_dict(torch.load(weights, map_location="cpu"))
-            if verbose:
-                print(f"Loaded weights from {weights}")
-        elif weights is None:
-            self.model = model_fn(weights=None)
-            if verbose:
-                print("No pretrained weights")
+        # Initialize base ResNet with or without pretrained weights
+        if weights is None:
+            model = model_fn(weights=None)
+        elif isinstance(weights, (str, Path)) and weights.endswith((".pt", ".pth")):
+            model = model_fn(weights=None)  # for compatibility with our checkpoint
         else:
-            self.model = model_fn(weights=default_w)
+            model = model_fn(weights=default_w)
             if verbose:
                 print(f"Loaded default pretrained weights for {arch}")
 
-        # Replace conv1 for small images
-        self.model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.maxpool = nn.Identity()
+        # Init base class
+        super().__init__(BasicBlock, [len(b) for b in [model.layer1, model.layer2, model.layer3, model.layer4]])
 
-        # Remove layer4 to slim down the network
-        self.model.layer4 = nn.Identity()
+        # Copy weights from base model
+        self.load_state_dict(model.state_dict())
 
-        # Replace final FC to match layer3's output channels
-        self.model.fc = nn.Linear(layer3_out, num_classes)
+        # Adjust for small images
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.maxpool = nn.Identity()
+        self.layer4 = nn.Identity()
+        self.fc = nn.Linear(layer3_out, num_classes)
 
-        # Move to device
-        self.model.to(device)
+        # Load checkpoint if path is given
+        if isinstance(weights, (str, Path)) and weights.endswith((".pt", ".pth")):
+            state_dict = torch.load(weights, map_location="cpu", weights_only=True)
+            self.load_state_dict(state_dict)
+            if verbose:
+                print(f"Loaded weights from {weights}")
+        elif weights is None and verbose:
+            print("No pretrained weights")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
+        self.to(device)
 
 
 if __name__ == "__main__":
