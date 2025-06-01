@@ -402,6 +402,7 @@ class TriggerSelector:
                 color = self._random_color(C)
                 alpha = random.uniform(0.05, 0.15)
                 trigger_image = random.choice(self.blend_images)
+                self.blend_images.remove(trigger_image)
                 trigger = trigger_cls(self.image_shape, trigger_image=trigger_image, alpha=alpha)
 
             else:
