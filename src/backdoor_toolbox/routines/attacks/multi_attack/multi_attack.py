@@ -1,8 +1,8 @@
 import copy
+import csv
 import json
 import random
 from pathlib import Path
-import csv
 
 import torch
 import torch.nn as nn
@@ -15,7 +15,7 @@ from torchvision.transforms import v2
 
 from backdoor_toolbox.routines.attacks.multi_attack.config import config
 from backdoor_toolbox.routines.base import BaseRoutine
-from backdoor_toolbox.triggers.transform.transform import TriggerSelector
+from backdoor_toolbox.triggers.transform.transform import TriggerSelector, TriggerTypes
 from backdoor_toolbox.utils.dataset import DatasetSplitter, PoisonedDatasetWrapper
 from backdoor_toolbox.utils.inspectors import FeatureExtractor, GradCAM
 from backdoor_toolbox.utils.logger import Logger
@@ -142,17 +142,20 @@ class MultiAttackRoutine(BaseRoutine):
         subsets = dataset_splitter.create_subsets()
 
         # load trigger images for blend method
-        blend_images = []
-        for blend_image_path in config["trigger"]["blend"]["bg_paths"]:
-            blend_img = read_image(blend_image_path)
+        if TriggerTypes.BLEND.value in config["trigger"]["triggers_cls"]:
+            blend_images = []
+            for blend_image_path in config["trigger"]["blend"]["bg_paths"]:
+                blend_img = read_image(blend_image_path)
 
-            # convert image to grayscale if the dataset is in grayscale
-            if config["dataset"]["image_shape"][0] == 1:
-                blend_img = tf.rgb_to_grayscale(blend_img)
+                # convert image to grayscale if the dataset is in grayscale
+                if config["dataset"]["image_shape"][0] == 1:
+                    blend_img = tf.rgb_to_grayscale(blend_img)
 
-            # apply base transforms to the images
-            blend_img = config["dataset"]["base_transform"](blend_img)
-            blend_images.append(blend_img)
+                # apply base transforms to the images
+                blend_img = config["dataset"]["base_transform"](blend_img)
+                blend_images.append(blend_img)
+        else:
+            blend_images = None
 
         # construct N random trigger transform policies
         trigger_selector = TriggerSelector(
