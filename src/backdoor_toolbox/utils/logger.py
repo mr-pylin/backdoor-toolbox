@@ -528,7 +528,7 @@ class Logger:
                     for a in range(A, len(axes)):
                         axes[a].axis("off")
 
-                    fig.suptitle(f"{layer_name} | Sample {n}", fontsize=12)
+                    fig.suptitle(f"{layer_name} | Sample {n}")
                     plt.tight_layout()
                     overview_path = sample_path / f"overview_{layer_name}_sample_{n}.png"
                     plt.savefig(overview_path, dpi=96)
@@ -565,7 +565,7 @@ class Logger:
                 if normalize:
                     hmap = (hmap - hmap.min()) / (hmap.max() - hmap.min() + 1e-5)
                 fmap_byte = (hmap * 255).clamp(0, 255).byte()
-                write_png(fmap_byte.cpu(), layer_path / f"feature_{n}.png")
+                write_png(fmap_byte.cpu(), layer_path / f"sample_{n}.png")
                 total_saved += 1
 
             # Save overview plot per sample
@@ -586,12 +586,12 @@ class Logger:
                         hmap = (hmap - hmap.min()) / (hmap.max() - hmap.min() + 1e-5)
                     axes[n].imshow(hmap.permute(1, 2, 0).cpu(), cmap="gray")
                     axes[n].axis("off")
-                    axes[n].set_title(f"Map {n}", fontsize=8)
+                    axes[n].set_title(f"Map {n}")
 
                 for n in range(N, len(axes)):
                     axes[n].axis("off")
 
-                fig.suptitle(f"{layer_name} | Sample {n}", fontsize=12)
+                fig.suptitle(f"{layer_name} | Sample {n}")
                 plt.tight_layout()
                 overview_path = layer_path / f"overview_{layer_name}_sample_{n}.png"
                 plt.savefig(overview_path, dpi=150)
