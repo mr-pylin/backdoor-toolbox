@@ -12,29 +12,21 @@
 
 # [ATTACK]
 # backdoor_toolbox/routines/attacks/multi_attack/
-# routine = {
-#     "root": "backdoor_toolbox.routines.attacks.multi_attack",
-#     "file": "multi_attack",
-#     "class": "MultiAttackRoutine",
-#     "verbose": True,
-# }
-
-# backdoor_toolbox/routines/attacks/quantization_attack/
-# routine = {
-#     "root": "backdoor_toolbox.routines.attacks.quantization_attack",
-#     "file": "quantization_attack",
-#     "class": "QuantizationAttackRoutine",
-#     "verbose": True,
-# }
+routine = {
+    "root": "backdoor_toolbox.routines.attacks.multi_attack",
+    "file": "multi_attack",
+    "class": "MultiAttackRoutine",
+    "verbose": True,
+}
 
 
 # [DEFENSE]
-routine = {
-    "root": "backdoor_toolbox.routines.defenses.ensemble_learning",
-    "file": "ensemble_learning",
-    "class": "EnsembleLearningRoutine",
-    "verbose": True,
-}
+# routine = {
+#     "root": "backdoor_toolbox.routines.defenses.ensemble_learning",
+#     "file": "ensemble_learning",
+#     "class": "EnsembleLearningRoutine",
+#     "verbose": True,
+# }
 
 # routine = {
 #     "root": "backdoor_toolbox.routines.defenses.knowledge_distillation",
