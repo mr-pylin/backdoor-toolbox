@@ -48,7 +48,7 @@ class MultiAttackRoutine(BaseRoutine):
         sp_datasets, test_set_cda = self._prepare_data()
 
         # prepare model and initialize weights
-        sp_models = self._prepare_model()
+        sp_models = self._prepare_models()
 
         # train, validate and test each service provider
         for sp in range(len(sp_datasets)):
@@ -76,30 +76,42 @@ class MultiAttackRoutine(BaseRoutine):
 
         # examine cross model and dataset asr metric
         self._analyze_cross_test(
-            models=sp_models,
             test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
+            models=sp_models,
         )
 
         # feature-map analysis
         self._analyze_feature_maps(
-            models=sp_models,
             test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
             test_set_cda=test_set_cda,
+            models=sp_models,
         )
 
         # grad-cam analysis
         self._analyze_grad_cam(
-            models=sp_models,
             test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
             test_set_cda=test_set_cda,
+            models=sp_models,
         )
 
-        # TODO: asr label differnet for sps
-        # TODO: majority voting
-        # TODO: knowledge distillation
+    def _prepare_data(self) -> tuple[dict[str, dict[str, Dataset]], Dataset]:
+        """
+        Prepares training and testing datasets for N service providers, each with poisoned data and optional normalization.
 
-    def _prepare_data(self) -> tuple[dict[str,], Dataset]:
+        Steps:
+        - Dynamically loads the dataset class and initializes the global train and test sets.
+        - Splits the global training dataset into N (or N+1) subsets for different providers.
+        - Applies backdoor triggers (including support for blend triggers).
+        - Wraps each subset into poisoned datasets using `PoisonedDatasetWrapper`.
+        - Applies normalization (if enabled) and saves per-provider stats.
+        - Saves trigger visualization and finetune subset indices (if enabled).
 
+        Returns:
+            tuple:
+                - `subsets_dict`: Dictionary mapping provider IDs (e.g., "sp1", ..., "spN") to
+                their respective train/val/test_asr datasets.
+                - `test_set_cda`: The global clean test dataset used to evaluate CDA.
+        """
         # import dataset class
         dataset_cls = getattr(
             self._import_package(f"{config["modules"]["dataset"]["root"]}.{config["modules"]["dataset"]["file"]}"),
@@ -253,7 +265,21 @@ class MultiAttackRoutine(BaseRoutine):
 
         return subsets_dict, test_set_cda
 
-    def _prepare_model(self) -> list[nn.Module]:
+    def _prepare_models(self) -> list[nn.Module]:
+        """
+        Prepare and initialize one model for each service provider.
+
+        If 'random' is True in the config, model configurations are randomly sampled
+        from the list of available architectures. If 'same' is also True, the same
+        random model is used for all providers. Otherwise, a separate configuration
+        is sampled for each.
+
+        If 'random' is False and 'same' is True, a single fixed model configuration
+        is used. Any other combination raises an error.
+
+        Returns:
+            A list of initialized PyTorch models, one for each service provider.
+        """
 
         chosen_model_configs = {f"sp{i+1}": {} for i in range(config["dataset"]["num_subsets"])}
         sp_models = []
@@ -326,7 +352,30 @@ class MultiAttackRoutine(BaseRoutine):
 
         return sp_models
 
-    def _train_and_validate(self, sp_idx: int, train_set, val_set, model: nn.Module) -> None:
+    def _train_and_validate(
+        self,
+        sp_idx: int,
+        train_set: Dataset,
+        val_set: Dataset,
+        model: nn.Module,
+    ) -> None:
+        """
+        Train and validate a given model on the provided datasets.
+
+        This method performs training and validation over a number of epochs using
+        standard cross-entropy loss. It tracks metrics such as loss, clean data accuracy (CDA),
+        and attack success rate (ASR) for both the training and validation sets. It also handles
+        logging, weight saving, learning rate scheduling, and optional plotting of results.
+
+        Args:
+            sp_idx (int): The index of the service provider (1-based) used for logging paths.
+            train_set (Dataset): The training dataset, wrapped with poisoning and clean transforms.
+            val_set (Dataset): The validation dataset, wrapped similarly for ASR/CDA calculation.
+            model (nn.Module): The neural network model to be trained and validated.
+
+        Returns:
+            None
+        """
         # save stats per epoch
         train_loss_per_epoch, train_cda_per_epoch, train_asr_per_epoch = [], [], []
         val_loss_per_epoch, val_cda_per_epoch, val_asr_per_epoch = [], [], []
@@ -508,7 +557,29 @@ class MultiAttackRoutine(BaseRoutine):
                 clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
-    def _test(self, sp_idx: int, test_set_cda, test_set_asr, model) -> None:
+    def _test(
+        self,
+        sp_idx: int,
+        test_set_cda: Dataset,
+        test_set_asr: Dataset,
+        model: nn.Module,
+    ) -> None:
+        """
+        Evaluate a trained model on clean and poisoned test datasets.
+
+        This method computes the clean data accuracy (CDA) and attack success rate (ASR)
+        for the given model using separate datasets. It also logs the loss, confusion
+        matrices, and visual predictions, and saves the results for further analysis.
+
+        Args:
+            sp_idx (int): Index of the service provider (1-based), used for logger file paths.
+            test_set_cda (Dataset): Dataset used to measure clean data accuracy (CDA).
+            test_set_asr (Dataset): Dataset used to measure attack success rate (ASR), includes poisoned samples.
+            model (nn.Module): The trained model to evaluate.
+
+        Returns:
+            None
+        """
         # save true/pred labels for confusion matrix
         true_labels_asr, true_labels_cda = [], []
         predictions_asr, predictions_cda = [], []
@@ -635,8 +706,25 @@ class MultiAttackRoutine(BaseRoutine):
                 clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
-    def _analyze_cross_test(self, models, test_sets_asr) -> None:
+    def _analyze_cross_test(
+        self,
+        test_sets_asr: list[Dataset],
+        models: list[nn.Module],
+    ) -> None:
+        """
+        Perform cross-testing to evaluate model robustness across poisoned datasets.
 
+        For each model in the input list, this method evaluates its performance
+        (attack success rate and clean data accuracy) on all provided poisoned test
+        datasets. The results are stored in matrix form and logged using the logger.
+
+        Args:
+            test_sets_asr (list[Dataset]): A list of poisoned test datasets, one per service provider.
+            models (list[nn.Module]): A list of trained models, each associated with a different provider.
+
+        Returns:
+            None
+        """
         asr_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
         cda_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
 
@@ -696,7 +784,29 @@ class MultiAttackRoutine(BaseRoutine):
             row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
         )
 
-    def _analyze_feature_maps(self, models, test_sets_asr, test_set_cda):
+    def _analyze_feature_maps(
+        self,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        models: list[nn.Module],
+    ):
+        """
+        Extract and save feature maps from specified layers of multiple models.
+
+        For each model and its corresponding poisoned datasets, this method:
+        - Extracts feature maps from the first batch of poisoned inputs.
+        - Optionally normalizes the clean dataset before extracting feature maps.
+        - Logs the resulting feature maps for both poisoned and clean samples
+        using the configured settings.
+
+        Args:
+            test_sets_asr (list[Dataset]): List of poisoned test datasets (one per target domain).
+            test_set_cda (Dataset): Clean test dataset shared across all models.
+            models (list[nn.Module]): List of trained models corresponding to different training sources.
+
+        Returns:
+            None
+        """
         for i, model in enumerate(models):
 
             model.eval()
@@ -749,7 +859,7 @@ class MultiAttackRoutine(BaseRoutine):
 
             # extract feature maps per layer per sample
             feature_maps = model_inspector.extract_feature_maps(
-                x_asr,
+                x_cda,
                 layer_names=config["logger"]["feature_maps"]["layers"],
             )
 
@@ -761,7 +871,29 @@ class MultiAttackRoutine(BaseRoutine):
                 overview=config["logger"]["feature_maps"]["overview"],
             )
 
-    def _analyze_grad_cam(self, models, test_sets_asr, test_set_cda):
+    def _analyze_grad_cam(
+        self,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        models: list[nn.Module],
+    ):
+        """
+        Generate and save Grad-CAM visualizations for multiple models on clean and poisoned datasets.
+
+        For each model:
+        - Computes Grad-CAM heatmaps using the specified target layers for the first batch of both
+        poisoned and clean samples.
+        - Applies normalization to the clean dataset if required.
+        - Overlays heatmaps on the original images and saves them for analysis.
+
+        Args:
+            test_sets_asr (list[Dataset]): List of poisoned test datasets (per training subset).
+            test_set_cda (Dataset): Shared clean test dataset for evaluating CDA.
+            models (list[nn.Module]): List of trained models corresponding to different training subsets.
+
+        Returns:
+            None
+        """
         for i, model in enumerate(models):
 
             model.eval()

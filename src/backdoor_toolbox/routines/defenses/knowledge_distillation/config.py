@@ -22,20 +22,21 @@ config = {
         },
     },
     "checkpoint": {
-        "root": "./logs/attack/multi_attack/2025-05-27-22-11-14",
+        "root": "./logs/attack/multi_attack/2025-06-13-04-03-29",
         "model_dict": "sp{0}/model/config.json",
-        "model_weight": "sp{0}/model/weights/model_epoch_7.pth",
+        "model_weight": "sp{0}/model/weights/model_epoch_15.pth",
         "hyperparameters": "sp{0}/train/hyperparameters.json",
         "finetune_subset": "finetune_subset_indices.csv",
     },
     "kd": {
-        "only_ta": True,
+        "finetune_subset_size": 6000,
+        "only_ta": False,
         "ta": {
             "epochs": 15,
             "model": {
                 "file": "resnet_wrapper",
                 "class": "CustomResNet",
-                "arch": "resnet18",
+                "arch": "resnet34",
                 "weights": None,
             },
             "temprature": 4.0,
@@ -55,13 +56,10 @@ config = {
     },
     "dataset": {
         "num_subsets": 7,
-        "extract_finetune_subset": True,
         "root": "./data",
         "base_transform": v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
         "base_target_transform": None,
         "download": False,
-        "subset_ratio": 0.4,
-        "subset_overlap": True,
         "image_shape": (1, 28, 28),  # consider `image_shape` after passing through `v2.ToImage()`
         "clean_transform": None,
         "clean_target_transform": None,
@@ -83,31 +81,10 @@ config = {
                 r"./assets/blend_trigger/noise.jpg",
                 r"./assets/blend_trigger/kitty.jpg",
                 r"./assets/blend_trigger/pattern.jpg",
+                r"./assets/blend_trigger/creeper.jpg",
+                r"./assets/blend_trigger/chess.jpg",
             ],
         },
-    },
-    # check ./models/ for available models
-    "model": {
-        "root": "models.cnn",
-        "same": True,
-        "random": False,
-        "if_random": {
-            "resnet": {
-                "file": "resnet_wrapper",
-                "class": "CustomResNet",
-                "archs": ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"],
-                "weights": None,
-            },
-            # "vggnet": {},
-        },
-        "else": {
-            "file": "resnet_wrapper",
-            "class": "CustomResNet",
-            "arch": "resnet18",
-            "weights": None,
-        },
-        "extract_configuration": True,
-        "extract_path": "sp{0}/model/config.json",
     },
     "train": {
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split

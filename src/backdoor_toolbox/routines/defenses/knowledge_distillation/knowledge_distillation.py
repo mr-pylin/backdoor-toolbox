@@ -32,6 +32,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
         # set manual seed
         torch.manual_seed(seed=config["misc"]["seed"])
         random.seed(config["misc"]["seed"])
+        self.rng = np.random.default_rng(config["misc"]["seed"])
 
         # save config.py file to reproduce the results in future
         logger.save_configs(
@@ -45,49 +46,69 @@ class KnowledgeDistillationRoutine(BaseRoutine):
         test_sets_asr, test_set_cda, f_trainset, f_valset = self._prepare_data()
 
         # prepare model and initialize weights (including teachers, ta and student model)
-        teacher_models, ta_model, student_model = self._prepare_model()
+        teacher_models, ta_model, student_model = self._prepare_models()
 
-        # knowledge distillation [stage-1] : N teachers -> 1 TA
-        self._train_and_validate(
-            stage_idx=1,
-            train_set=f_trainset,
-            val_set=f_valset,
-            teacher_models=teacher_models,
-            ta_model=ta_model,
-            student_model=student_model,
-        )
+        if student_model is None:
+            stages = [
+                [teacher_models, ta_model],  # stage-1: N teachers -> 1 TA
+            ]
+        else:
+            stages = [
+                [teacher_models, ta_model],  # stage-1: N teachers -> 1 TA
+                [[ta_model], student_model],  # stage-2: 1 TA -> 1 student
+            ]
+        for stage_idx, (teachers, student) in enumerate(stages):
 
-        # knowledge distillation [stage-2] : 1 TA -> 1 student
-        # self._train_and_validate_2()
+            # knowledge distillation
+            self._train_and_validate(
+                stage_idx=stage_idx + 1,
+                train_set=f_trainset,
+                val_set=f_valset,
+                teacher_models=teachers,
+                student_model=student,
+            )
 
-        # test different poisoned test sets for cda and asr metrics
-        self._test(
-            stage_idx=1,
-            test_sets_asr=test_sets_asr,
-            test_set_cda=test_set_cda,
-            ta_model=ta_model,
-            student_model=student_model,
-        )
+            # test different poisoned test sets for cda and asr metrics
+            self._test(
+                stage_idx=stage_idx + 1,
+                test_sets_asr=test_sets_asr,
+                test_set_cda=test_set_cda,
+                student_model=student,
+            )
 
-        # feature-map analysis
-        self._analyze_feature_maps(
-            stage_idx=1,
-            ta_model=ta_model,
-            student_model=None,
-            test_sets_asr=test_sets_asr,
-            test_set_cda=test_set_cda,
-        )
+            # feature-map analysis
+            self._analyze_feature_maps(
+                stage_idx=stage_idx + 1,
+                test_sets_asr=test_sets_asr,
+                test_set_cda=test_set_cda,
+                student_model=student,
+            )
 
-        # grad-cam analysis
-        self._analyze_grad_cam(
-            stage_idx=1,
-            ta_model=ta_model,
-            student_model=None,
-            test_sets_asr=test_sets_asr,
-            test_set_cda=test_set_cda,
-        )
+            # grad-cam analysis
+            self._analyze_grad_cam(
+                stage_idx=stage_idx + 1,
+                test_sets_asr=test_sets_asr,
+                test_set_cda=test_set_cda,
+                student_model=student,
+            )
 
-    def _prepare_data(self) -> tuple[Dataset, list[Dataset]]:
+    def _prepare_data(self) -> tuple[list[Dataset], Dataset, Dataset, Dataset]:
+        """
+        Prepare datasets for knowledge distillation.
+
+        This includes:
+        - Loading the clean training dataset and splitting it into fine-tuning training/validation sets.
+        - Loading the clean test set for computing Clean Data Accuracy (CDA).
+        - Generating multiple poisoned versions of the test set for Attack Success Rate (ASR) evaluation,
+        each with a different trigger.
+
+        Returns:
+            tuple: A tuple containing:
+                - list[Dataset]: List of poisoned test sets (for ASR evaluation).
+                - Dataset: Clean test set (for CDA evaluation).
+                - Dataset: Fine-tuning training set (used to train the student model).
+                - Dataset: Fine-tuning validation set (used to evaluate during training).
+        """
 
         # import dataset class
         dataset_cls = getattr(
@@ -109,8 +130,9 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             delimiter=",",
             dtype=np.int32,
         )
+        finetune_shuffled_indices = self.rng.permutation(finetune_indices)[: config["kd"]["finetune_subset_size"]]
 
-        finetune_set = Subset(global_train_set, indices=finetune_indices)
+        finetune_set = Subset(global_train_set, indices=finetune_shuffled_indices)
         f_trainset, f_valset = random_split(
             dataset=finetune_set,
             lengths=config["train"]["train_val_ratio"],
@@ -186,7 +208,22 @@ class KnowledgeDistillationRoutine(BaseRoutine):
 
         return test_sets_asr, test_set_cda, f_trainset, f_valset
 
-    def _prepare_model(self) -> list[nn.Module]:
+    def _prepare_models(self) -> tuple[list[nn.Module], nn.Module, nn.Module | None]:
+        """
+        Prepare and initialize models for knowledge distillation.
+
+        This includes:
+        - Loading pretrained teacher models (one per subset).
+        - Creating the teaching assistant (TA) model.
+        - Optionally creating the student model (if enabled in config).
+
+        Returns:
+            tuple: A tuple containing:
+                - list[nn.Module]: List of teacher models (frozen and in eval mode).
+                - nn.Module: TA model (train mode).
+                - nn.Module | None: Student model (train mode), or None if `only_ta` is enabled.
+        """
+
         teacher_models = []
 
         # load sp models
@@ -269,12 +306,26 @@ class KnowledgeDistillationRoutine(BaseRoutine):
     def _train_and_validate(
         self,
         stage_idx: int,
-        train_set,
-        val_set,
+        train_set: Dataset,
+        val_set: Dataset,
         teacher_models: list[nn.Module],
-        ta_model: nn.Module,
         student_model: nn.Module,
     ) -> None:
+        """
+        Train a student model via knowledge distillation and validate it over epochs.
+
+        This method performs supervised training using multiple teacher models by
+        averaging their outputs. The student model is trained to match the teacher
+        outputs (soft labels) and ground-truth labels via a distillation loss. It
+        logs metrics, saves model weights per epoch, and plots results.
+
+        Args:
+            stage_idx (int): Index of the current distillation stage (1 for TA, 2 for Student).
+            train_set (Dataset): Training dataset used for distillation.
+            val_set (Dataset): Validation dataset used to evaluate generalization.
+            teacher_models (list[nn.Module]): List of pretrained, frozen teacher models.
+            student_model (nn.Module): The model being trained through distillation.
+        """
         # save stats per epoch
         train_loss_per_epoch, train_acc_per_epoch = [], []
         val_loss_per_epoch, val_acc_per_epoch = [], []
@@ -286,7 +337,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
         # initialize criterion, optimizer and lr_scheduler
         criterion = DistillationLoss(temperature=config["kd"]["ta"]["temprature"], alpha=config["kd"]["ta"]["alpha"])
         optimizer: optim.Optimizer = config["train"]["optimizer"](
-            ta_model.parameters(),
+            student_model.parameters(),
             **config["train"]["optimizer_params"],
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -314,7 +365,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
 
         for epoch in range(1, epochs + 1):
             # train phase
-            ta_model.train()
+            student_model.train()
             train_loss = 0
 
             for x, y_true in train_loader:
@@ -325,7 +376,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
                 with torch.no_grad():
                     teacher_logits = sum(t(x) for t in teacher_models) / len(teacher_models)
 
-                ta_logits = ta_model(x)
+                ta_logits = student_model(x)
 
                 loss = criterion(ta_logits, teacher_logits, y_true)
                 loss.backward()
@@ -348,7 +399,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             train_acc_metric.reset()
 
             # validation phase
-            ta_model.eval()
+            student_model.eval()
             val_loss = 0
 
             with torch.no_grad():
@@ -358,7 +409,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
 
                     # forward pass
                     teacher_logits = sum(t(x) for t in teacher_models) / len(teacher_models)
-                    ta_logits = ta_model(x)
+                    ta_logits = student_model(x)
                     loss = criterion(ta_logits, teacher_logits, y_true)
 
                     # calculate and store metrics per batch
@@ -403,7 +454,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             logger.save_weights(
                 path=Path(config["logger"]["weights"]["path"].format(stage_idx)),
                 filename=config["logger"]["weights"]["filename"],
-                model=ta_model,
+                model=student_model,
                 epoch=epoch,
                 only_state_dict=config["logger"]["weights"]["only_state_dict"],
             )
@@ -437,7 +488,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             logger.save_image_predictions(
                 path=Path(config["logger"]["pred_demo"]["train_path"].format(stage_idx)),
                 filename=data_role,
-                model=ta_model,
+                model=student_model,
                 dataset=data_value,
                 nrows=config["logger"]["pred_demo"]["nrows"],
                 ncols=config["logger"]["pred_demo"]["ncols"],
@@ -446,7 +497,28 @@ class KnowledgeDistillationRoutine(BaseRoutine):
                 clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
-    def _test(self, stage_idx, test_sets_asr, test_set_cda, ta_model, student_model) -> None:
+    def _test(
+        self,
+        stage_idx: int,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        student_model: nn.Module,
+    ) -> None:
+        """
+        Evaluate a trained student model on poisoned and clean test sets.
+
+        This function calculates:
+        - ASR (Attack Success Rate) on multiple poisoned test datasets.
+        - CDA (Clean Data Accuracy) on both poisoned and clean datasets.
+        - Confusion matrices for detailed class-wise analysis.
+        - Stores results in CSVs and optionally prints them.
+
+        Args:
+            stage_idx (int): Index of the distillation stage (used for logging paths).
+            test_sets_asr (list[Dataset]): List of poisoned test datasets to evaluate ASR.
+            test_set_cda (Dataset): Clean test dataset to evaluate CDA.
+            student_model (nn.Module): The trained student model to be evaluated.
+        """
 
         # initialize test asr (attack success rate) metric and move to <device>
         test_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
@@ -466,7 +538,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
                     y_raw = y_raw.to(config["misc"]["device"])
 
                     # forward
-                    ta_logits = ta_model(x_asr)
+                    ta_logits = student_model(x_asr)
 
                     # calculate and store metrics per batch
                     test_asr_metric.update(ta_logits, poisoned_mask)
@@ -516,7 +588,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
                 x_cda, y_cda_true = x_cda.to(config["misc"]["device"]), y_cda_true.to(config["misc"]["device"])
 
                 # forward
-                ta_logits = ta_model(x_cda)
+                ta_logits = student_model(x_cda)
 
                 # calculate and store metrics per batch
                 test_cda_metric.update(ta_logits, y_cda_true, torch.ones(size=(len(x_cda),), dtype=torch.bool))
@@ -556,10 +628,30 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             **{f"p_cda_{i+1}": cda_per_dataset[i] for i in range(len(test_sets_asr))},
         )
 
-    def _analyze_feature_maps(self, stage_idx, ta_model, student_model, test_sets_asr, test_set_cda):
+    def _analyze_feature_maps(
+        self,
+        stage_idx: int,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        student_model: nn.Module,
+    ) -> None:
+        """
+        Analyze and save feature maps from the student model for both poisoned and clean test samples.
 
-        ta_model.eval()
-        model_inspector = FeatureExtractor(ta_model)
+        This function:
+        - Extracts and stores feature maps for the first batch of each poisoned dataset.
+        - Extracts and stores feature maps for the first batch of the clean dataset.
+        - Supports configurable normalization, aggregation, and overview plotting for each layer.
+
+        Args:
+            stage_idx (int): Index of the current stage (used in output paths).
+            test_sets_asr (list[Dataset]): List of poisoned test datasets.
+            test_set_cda (Dataset): Clean test dataset.
+            student_model (nn.Module): The trained student model to inspect.
+        """
+
+        student_model.eval()
+        model_inspector = FeatureExtractor(student_model)
         for j, test_set_asr in enumerate(test_sets_asr):
 
             # extract only the first batch of data
@@ -608,7 +700,7 @@ class KnowledgeDistillationRoutine(BaseRoutine):
 
         # extract feature maps per layer per sample
         feature_maps = model_inspector.extract_feature_maps(
-            x_asr,
+            x_cda,
             layer_names=config["logger"]["feature_maps"]["layers"],
         )
 
@@ -620,9 +712,30 @@ class KnowledgeDistillationRoutine(BaseRoutine):
             overview=config["logger"]["feature_maps"]["overview"],
         )
 
-    def _analyze_grad_cam(self, stage_idx, ta_model, student_model, test_sets_asr, test_set_cda):
-        ta_model.eval()
-        grad_cam = GradCAM(model=ta_model, target_layers=config["logger"]["grad_cam"]["layers"])
+    def _analyze_grad_cam(
+        self,
+        stage_idx: int,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        student_model: nn.Module,
+    ) -> None:
+        """
+        Generate and store Grad-CAM heatmaps for both poisoned and clean datasets.
+
+        This method:
+        - Applies Grad-CAM on the first batch of each poisoned test set to identify activated regions.
+        - Overlays and saves heatmaps to visualize model attention.
+        - Repeats the same process for the clean test set.
+
+        Args:
+            stage_idx (int): Index of the current training stage (used in logging paths).
+            test_sets_asr (list[Dataset]): List of poisoned test datasets.
+            test_set_cda (Dataset): Clean test dataset.
+            student_model (nn.Module): The student model under evaluation.
+        """
+
+        student_model.eval()
+        grad_cam = GradCAM(model=student_model, target_layers=config["logger"]["grad_cam"]["layers"])
         for j, test_set_asr in enumerate(test_sets_asr):
 
             # extract only the first batch of data

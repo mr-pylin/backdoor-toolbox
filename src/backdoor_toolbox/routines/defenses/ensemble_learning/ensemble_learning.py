@@ -2,26 +2,21 @@ import copy
 import json
 import random
 from pathlib import Path
-from typing import Callable, List, Literal
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torchvision.io import read_image
 from torchvision.transforms import functional as tf
 from torchvision.transforms import v2
 
-from backdoor_toolbox.routines.defenses.ensemble_learning.config import config
 from backdoor_toolbox.routines.base import BaseRoutine
+from backdoor_toolbox.routines.defenses.ensemble_learning.config import config
 from backdoor_toolbox.triggers.transform.transform import TriggerSelector
 from backdoor_toolbox.utils.dataset import PoisonedDatasetWrapper
 from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
-
-VotingType = Literal["hard", "soft"]
 
 # instantiate a logger to save parameters, plots, weights, ...
 logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
@@ -46,11 +41,26 @@ class EnsembleLearningRoutine(BaseRoutine):
         test_sets_asr, test_set_cda = self._prepare_data()
 
         # prepare model and initialize weights
-        sp_models = self._prepare_model()
+        sp_models = self._prepare_models()
 
+        # test different poisoned test sets for cda and asr metrics
         self._test(test_sets_asr, test_set_cda, sp_models)
 
-    def _prepare_data(self) -> tuple[Dataset, list[Dataset]]:
+    def _prepare_data(self) -> tuple[list[Dataset], Dataset]:
+        """
+        Prepare test datasets for evaluation, including clean and poisoned variants.
+
+        - Loads the base clean test dataset for CDA evaluation.
+        - Loads blend trigger images if needed and applies base transforms.
+        - Constructs multiple trigger transforms (one per subset).
+        - Wraps the clean test set with each trigger to create poisoned test sets for ASR evaluation.
+        - Applies normalization if specified in the config.
+
+        Returns:
+            Tuple[list[Dataset], Dataset]:
+                - A list of poisoned test datasets, one per trigger/subset (for ASR testing).
+                - The base clean test dataset (for CDA testing).
+        """
 
         # import dataset class
         dataset_cls = getattr(
@@ -125,7 +135,19 @@ class EnsembleLearningRoutine(BaseRoutine):
 
         return test_sets_asr, test_set_cda
 
-    def _prepare_model(self) -> list[nn.Module]:
+    def _prepare_models(self) -> list[nn.Module]:
+        """
+        Load and prepare models for each service provider.
+
+        Depending on configuration, either:
+        - Loads the model architecture and weights separately (state dict),
+        - Or loads the entire serialized model directly.
+
+        Each model is set to evaluation mode before being added to the list.
+
+        Returns:
+            list[nn.Module]: A list of models loaded and ready for inference.
+        """
         models = []
 
         # load sp models
@@ -163,7 +185,29 @@ class EnsembleLearningRoutine(BaseRoutine):
 
         return models
 
-    def _test(self, test_sets_asr, test_set_cda, models) -> None:
+    def _test(
+        self,
+        test_sets_asr: list[Dataset],
+        test_set_cda: Dataset,
+        models: list[nn.Module],
+    ) -> None:
+        """
+        Evaluate ensemble models on poisoned (ASR) and clean (CDA) test datasets.
+
+        The method computes:
+        - Attack Success Rate (ASR) on poisoned test sets.
+        - Clean Data Accuracy (CDA) on the clean test set.
+        It supports both soft and hard voting ensemble strategies.
+        Confusion matrices and metrics are saved to disk.
+
+        Args:
+            test_sets_asr (list[Dataset]): List of poisoned test datasets for ASR evaluation.
+            test_set_cda (Dataset): Clean test dataset for CDA evaluation.
+            models (list[nn.Module]): List of trained models in the ensemble.
+
+        Returns:
+            None
+        """
 
         # initialize test asr (attack success rate) metric and move to <device>
         test_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
@@ -298,16 +342,3 @@ class EnsembleLearningRoutine(BaseRoutine):
             **{f"p_asr_{i+1}": asr_per_dataset[i] for i in range(len(test_sets_asr))},
             **{f"p_cda_{i+1}": cda_per_dataset[i] for i in range(len(test_sets_asr))},
         )
-
-        # store and/or plot demo images with true and predicted labels
-        # logger.save_image_predictions(
-        #     path=Path(f"{config["logger"]["pred_demo"]["test_path"]}".format(sp_idx)),
-        #     filename="test_cda_hard_vote",
-        #     model=model,
-        #     dataset=test_set_cda,
-        #     nrows=config["logger"]["pred_demo"]["nrows"],
-        #     ncols=config["logger"]["pred_demo"]["ncols"],
-        #     save_grid=config["logger"]["pred_demo"]["save_grid"],
-        #     show_grid=config["logger"]["pred_demo"]["show_grid"],
-        #     clamp=config["logger"]["pred_demo"]["clamp"],
-        # )

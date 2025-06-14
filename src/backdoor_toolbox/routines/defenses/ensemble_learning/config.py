@@ -22,16 +22,16 @@ config = {
         },
     },
     "checkpoint": {
-        "root": "./logs/attack/multi_attack/2025-05-27-19-55-20",
+        "root": "./logs/attack/multi_attack/2025-06-13-04-03-29",
         "model_dict": "sp{0}/model/config.json",
-        "model_weight": "sp{0}/model/weights/model_epoch_3.pth",
+        "model_weight": "sp{0}/model/weights/model_epoch_15.pth",
         "hyperparameters": "sp{0}/train/hyperparameters.json",
     },
     "ensemble": {
         "vote": "hard",
     },
     "dataset": {
-        "num_subsets": 3,
+        "num_subsets": 7,
         "root": "./data",
         "base_transform": v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
         "base_target_transform": None,
@@ -57,6 +57,8 @@ config = {
                 r"./assets/blend_trigger/noise.jpg",
                 r"./assets/blend_trigger/kitty.jpg",
                 r"./assets/blend_trigger/pattern.jpg",
+                r"./assets/blend_trigger/creeper.jpg",
+                r"./assets/blend_trigger/chess.jpg",
             ],
         },
     },
@@ -81,14 +83,6 @@ config = {
         "confusion_matrix": {
             "path": "test/metrics",
             "filename": "confusion_matrix",
-        },
-        "pred_demo": {
-            "test_path": "test/demo",
-            "nrows": 8,
-            "ncols": 24,
-            "clamp": True,
-            "save_grid": True,
-            "show_grid": False,
         },
     },
     "misc": {
