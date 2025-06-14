@@ -23,12 +23,12 @@ class FeatureExtractor:
 
     def register_hooks(self, layer_names: list[str]):
         """
-        Attach forward hooks to multiple layers.
+        Attach forward hooks to layers using hierarchical names (e.g., 'features.3').
         """
-        modules = dict(self.model.named_modules())
         for name in layer_names:
-            submod = modules.get(name, None)
-            if submod is None:
+            try:
+                submod = self.model.get_submodule(name)
+            except AttributeError:
                 raise ValueError(f"Layer '{name}' not found in model")
             handle = submod.register_forward_hook(self._hook_fn(name))
             self._hooks.append(handle)
@@ -53,11 +53,9 @@ class FeatureExtractor:
         return output
 
     def get_layer_weights(self, layer_name: str) -> torch.Tensor:
-        """
-        Returns the weight tensor of layer_name (e.g., conv kernels).
-        """
-        submod = dict(self.model.named_modules()).get(layer_name, None)
-        if submod is None:
+        try:
+            submod = self.model.get_submodule(layer_name)
+        except AttributeError:
             raise ValueError(f"Layer '{layer_name}' not found in model")
         if not hasattr(submod, "weight"):
             raise ValueError(f"Layer '{layer_name}' has no 'weight' attribute")
@@ -85,8 +83,9 @@ class GradCAM:
         def backward_hook(module, grad_in, grad_out):
             self.gradients[layer_name] = grad_out[0]
 
-        layer = self.named_modules.get(layer_name)
-        if layer is None:
+        try:
+            layer = self.model.get_submodule(layer_name)
+        except AttributeError:
             raise ValueError(f"Layer '{layer_name}' not found in model")
 
         self._forward_hooks.append(layer.register_forward_hook(forward_hook))
