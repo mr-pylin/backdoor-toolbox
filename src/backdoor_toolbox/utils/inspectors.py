@@ -1,29 +1,39 @@
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
 
 class FeatureExtractor:
-    """
-    Utility for extracting intermediate feature maps and layer weights from a nn.Module.
-    """
+    """Utility class to extract intermediate feature maps and layer weights from a PyTorch model."""
 
     def __init__(self, model: nn.Module):
+        """
+        Initialize the FeatureExtractor.
+
+        Args:
+            model (nn.Module): The model from which to extract features.
+        """
         self.model = model
         self._features = {}
         self._hooks = []
 
-    def _hook_fn(self, name):
+    def _hook_fn(self, name: str) -> callable:
         def fn(module, inp, out):
             self._features[name] = out.detach().cpu()
 
         return fn
 
-    def register_hooks(self, layer_names: list[str]):
+    def register_hooks(self, layer_names: list[str]) -> None:
         """
-        Attach forward hooks to layers using hierarchical names (e.g., 'features.3').
+        Register forward hooks on specified layers.
+
+        Args:
+            layer_names (list[str]): List of hierarchical layer names.
+
+        Raises:
+            ValueError: If any layer name is not found in the model.
         """
         for name in layer_names:
             try:
@@ -33,14 +43,25 @@ class FeatureExtractor:
             handle = submod.register_forward_hook(self._hook_fn(name))
             self._hooks.append(handle)
 
-    def remove_hooks(self):
+    def remove_hooks(self) -> None:
+        """Remove all registered hooks."""
         for h in self._hooks:
             h.remove()
         self._hooks.clear()
 
     def extract_feature_maps(self, x: torch.Tensor, layer_names: list[str]) -> dict[str, torch.Tensor]:
         """
-        Runs a forward pass on x, returns feature maps from the specified layers.
+        Extract intermediate feature maps from specified layers.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+            layer_names (list[str]): List of layers to extract from.
+
+        Returns:
+            dict[str, torch.Tensor]: Feature maps keyed by layer name.
+
+        Raises:
+            RuntimeError: If any requested feature map is missing.
         """
         self._features.clear()
         self.register_hooks(layer_names)
@@ -53,6 +74,18 @@ class FeatureExtractor:
         return output
 
     def get_layer_weights(self, layer_name: str) -> torch.Tensor:
+        """
+        Retrieve the weights of a specified layer.
+
+        Args:
+            layer_name (str): Hierarchical name of the layer.
+
+        Returns:
+            torch.Tensor: Detached CPU tensor of weights.
+
+        Raises:
+            ValueError: If the layer is not found or lacks a weight attribute.
+        """
         try:
             submod = self.model.get_submodule(layer_name)
         except AttributeError:
@@ -63,11 +96,16 @@ class FeatureExtractor:
 
 
 class GradCAM:
-    """
-    Compute Grad-CAM heatmaps for one or more target layers and inputs.
-    """
+    """Computes Grad-CAM heatmaps for specified layers in a neural network."""
 
     def __init__(self, model: nn.Module, target_layers: list[str]):
+        """
+        Initialize the GradCAM module.
+
+        Args:
+            model (nn.Module): The model to inspect.
+            target_layers (list[str]): Names of layers to register for Grad-CAM.
+        """
         self.model = model
         self.target_layers = target_layers
         self.named_modules = dict(model.named_modules())
@@ -76,7 +114,7 @@ class GradCAM:
         self._forward_hooks = []
         self._backward_hooks = []
 
-    def _make_hooks(self, layer_name: str):
+    def _make_hooks(self, layer_name: str) -> None:
         def forward_hook(module, inp, out):
             self.activations[layer_name] = out
 
@@ -96,7 +134,7 @@ class GradCAM:
             self._make_hooks(name)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         for h in self._forward_hooks + self._backward_hooks:
             h.remove()
         self._forward_hooks.clear()
@@ -104,10 +142,14 @@ class GradCAM:
 
     def generate(self, x: torch.Tensor, target_class: int | list[int] | None = None) -> dict[str, torch.Tensor]:
         """
-        Generate Grad-CAM heatmaps for given inputs and target layers.
+        Generate Grad-CAM heatmaps for each target layer.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape [B, C, H, W] or [C, H, W].
+            target_class (int | list[int] | None): Target class or classes for which gradients are computed.
 
         Returns:
-            Dict[layer_name, heatmap_tensor of shape (B, H, W)]
+            dict[str, torch.Tensor]: Heatmaps per layer with shape [B, H, W].
         """
         is_single = x.dim() == 3
         if is_single:
@@ -147,20 +189,20 @@ class GradCAM:
 
     def overlay_heatmaps(
         self,
-        orig_imgs: torch.Tensor,  # [B, 3, H, W]
-        heatmaps: dict[str, torch.Tensor],  # {layer_name: [B, H, W]}
+        orig_imgs: torch.Tensor,
+        heatmaps: dict[str, torch.Tensor],
         alpha: float = 0.4,
     ) -> dict[str, torch.Tensor]:
         """
-        Overlay heatmaps on top of original images for each target layer.
+        Overlay Grad-CAM heatmaps onto original images.
 
         Args:
-            orig_imgs: Tensor of shape [B, 3, H, W], float in [0,1] or [0,255].
-            heatmaps: Dict[layer_name, Tensor of shape [B, H, W]], float in [0,1].
-            alpha: Transparency factor for overlay.
+            orig_imgs (torch.Tensor): Images of shape [B, 3, H, W], values in [0, 1] or [0, 255].
+            heatmaps (dict[str, torch.Tensor]): Dict of [B, H, W] heatmaps per layer.
+            alpha (float): Transparency factor for heatmap overlay.
 
         Returns:
-            Dict[layer_name, Tensor of shape [B, 3, H, W]], float in [0,1].
+            dict[str, torch.Tensor]: Images with heatmaps overlaid, shape [B, 3, H, W] per layer.
         """
         if orig_imgs.max() > 1:
             orig_imgs = orig_imgs / 255.0
@@ -189,6 +231,7 @@ class GradCAM:
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+
     from backdoor_toolbox.models.cnn.resnet_wrapper import CustomResNet
 
     # instantiate or load a model
@@ -202,7 +245,7 @@ if __name__ == "__main__":
     inspector = FeatureExtractor(model)
 
     # extract a feature map from the chosen layer
-    feat_maps = inspector.extract_feature_maps(x, layer_names=["model.layer1", "model.layer2", "model.layer3"])
+    feat_maps = inspector.extract_feature_maps(x, layer_names=["layer1", "layer2", "layer3"])
 
     # log
     print(f"Feature maps: ")
@@ -210,7 +253,7 @@ if __name__ == "__main__":
     print(f"{list(feat_maps.values())[0].shape}")
 
     # gradcam
-    grad_cam = GradCAM(model, target_layers=["model.layer1", "model.layer2", "model.layer3"])
+    grad_cam = GradCAM(model, target_layers=["layer1", "layer2", "layer3"])
 
     # compute a Grad-CAM heatmap for the same input
     with grad_cam as gc:

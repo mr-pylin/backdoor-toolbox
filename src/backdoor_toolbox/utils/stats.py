@@ -1,18 +1,22 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
-from typing import Tuple
 
 
-def calculate_mean_and_std(dataset: Dataset, batch_size: int = 256) -> Tuple[list[float], list[float]]:
+def calculate_mean_and_std(dataset: Dataset, batch_size: int = 256) -> tuple[list[float], list[float]]:
     """
-    Computes the per-channel mean and std of a dataset in a memory-efficient way.
+    Calculate per-channel mean and standard deviation for a dataset.
+
+    This function iterates over the dataset in mini-batches to compute
+    the mean and standard deviation for each channel in a memory-efficient manner.
 
     Args:
-        dataset (Dataset): The input dataset (expects samples of shape [C, H, W]).
-        batch_size (int): Batch size for processing.
+        dataset (Dataset): A PyTorch dataset that returns image tensors of shape [C, H, W].
+        batch_size (int, optional): Number of samples per batch. Defaults to 256.
 
     Returns:
-        Tuple[list[float], list[float]]: Per-channel mean and std.
+        tuple[list[float], list[float]]: A tuple containing two lists:
+            - Mean values per channel.
+            - Standard deviation values per channel.
     """
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     n_pixels = 0

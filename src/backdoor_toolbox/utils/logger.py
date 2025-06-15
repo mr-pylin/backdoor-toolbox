@@ -17,24 +17,22 @@ from torchvision.transforms import v2
 
 class Logger:
     """
-    A utility for saving configurations, hyperparameters, metrics, confusion matrices, plots, model weights, and demos.
+    Utility for saving hyperparameters, metrics, images, feature maps, model weights, etc.
 
     Attributes:
-        root (Path): Directory to store all logs and artifacts.
-        verbose (bool): Whether to print status messages during saves.
+      root: Base directory for all outputs.
+      verbose: Whether to print status messages.
     """
 
-    def __init__(
-        self,
-        root: Path,
-        verbose: bool = True,
-    ):
+    def __init__(self, root: Path, verbose: bool = True):
         """
-        Initialize the Logger.
+        Initialize the Logger instance.
+
+        Creates a timestamped directory under the specified root path for logging outputs.
 
         Args:
-            root: Base path for logging results.
-            verbose: Print messages during saving. Defaults to True.
+            root (Path): Root directory where the log folder will be created.
+            verbose (bool, optional): If True, enables console output during logging operations. Defaults to True.
         """
         self.root = Path(f"{root}/{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
         self.verbose = verbose
@@ -42,19 +40,17 @@ class Logger:
         # Make directory if not available
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def save_configs(
-        self,
-        src_path: Path,
-        dst_path: Path,
-        filename: str,
-    ) -> None:
+    def save_configs(self, src_path: Path, dst_path: Path, filename: str) -> None:
         """
-        Save a Python config file as a copy in the log directory.
+        Save a Python configuration file into the logging directory.
+
+        Copies the file `<filename>.py` from `src_path` and places it under
+        `self.root/dst_path`. The directory structure is created if it does not exist.
 
         Args:
-            src_path: Directory containing the source file.
-            dst_path: Relative destination path under the logger root.
-            filename: File name without extension (assumes .py).
+            src_path (Path): Path to the source directory containing the `.py` file.
+            dst_path (Path): Relative subdirectory under the logger root where the file will be saved.
+            filename (str): Name of the configuration file (without `.py` extension).
         """
         save_dir = self.root / dst_path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -76,19 +72,17 @@ class Logger:
         except Exception as e:
             print(f"[Logger][Error] Unexpected error while saving config: {e}")
 
-    def save_hyperparameters(
-        self,
-        path: Path,
-        filename: str,
-        **hyperparameters: Any,
-    ) -> None:
+    def save_hyperparameters(self, path: Path, filename: str, **hyperparameters: Any) -> None:
         """
-        Save hyperparameters as a JSON file and any non-serializable objects (like state_dicts) separately.
+        Save hyperparameters to disk.
+
+        Stores JSON-serializable hyperparameters in a `.json` file and saves non-serializable
+        items (e.g., PyTorch `state_dict`s) separately using `torch.save`.
 
         Args:
-            path: Subdirectory under log root to save the file.
-            filename: File name (without .json extension).
-            **hyperparameters: Arbitrary key-value hyperparameters.
+            path (Path): Subdirectory under the logger root where files will be saved.
+            filename (str): Base filename (without extension) for the saved files.
+            **hyperparameters (Any): Arbitrary keyword arguments representing hyperparameters.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -126,19 +120,17 @@ class Logger:
         except Exception as e:
             print(f"[Logger][Error] Unexpected error while saving hyperparameters: {e}")
 
-    def save_metrics(
-        self,
-        path: Path,
-        filename: str,
-        **data: float,
-    ) -> None:
+    def save_metrics(self, path: Path, filename: str, **data: float) -> None:
         """
-        Save metrics to a CSV file, appending if file already exists.
+        Save metric data to a CSV file.
+
+        Appends metric key-value pairs to a CSV file located in the specified subdirectory.
+        Creates the directory and file if they do not exist.
 
         Args:
-            path: Subdirectory to save the file in.
-            filename: File name (without `.csv` extension).
-            **data: Key-value metric pairs to log.
+            path (Path): Subdirectory under the logger root for saving the file.
+            filename (str): CSV filename without the `.csv` extension.
+            **data (float): Arbitrary metric key-value pairs to log.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -171,15 +163,20 @@ class Logger:
         col_labels: list[int | str] | None = None,
     ) -> None:
         """
-        Save a labeled 2D matrix (e.g., confusion matrix or cross-metrics) as CSV.
+        Save a labeled 2D matrix as a CSV file.
+
+        This function saves matrices such as confusion matrices or cross-metrics
+        with labeled rows and columns, including a custom header title for the
+        top-left cell.
 
         Args:
-            path: Subdirectory to save the file in.
-            filename: File name (without `.csv` extension).
-            matrix: 2D matrix data (NumPy array or Torch tensor).
-            row0_col0_title: Top-left header cell (e.g., "True/Pred").
-            row_labels: Labels for rows.
-            col_labels: Labels for columns. If None, uses row_labels.
+            path (Path): Subdirectory under the logger root to save the file.
+            filename (str): Filename without the `.csv` extension.
+            matrix (np.ndarray | torch.Tensor): 2D matrix data to save.
+            row0_col0_title (str): Title for the top-left header cell (e.g., "True/Pred").
+            row_labels (Sequence[int | str]): Labels for the rows.
+            col_labels (Optional[Sequence[int | str]], optional): Labels for the columns.
+                Defaults to `row_labels` if not provided.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -225,16 +222,19 @@ class Logger:
         Plot and save line graphs for one or more metric series over epochs.
 
         Args:
-            path: Directory to save the plot.
-            filename: File name (without extension).
-            save_format: File format ('png' or 'svg').
-            ylabel: Label for the Y-axis.
-            title: Title of the plot.
-            data: Dictionary mapping label to Y-axis data series.
-            xlabel: Label for the X-axis. Defaults to "Epochs".
-            show: Whether to display the plot interactively.
-            ylim: Optional (min, max) for Y-axis limits.
-            markers: Whether to add point markers to lines.
+            path (Path): Directory under the logger root to save the plot.
+            filename (str): Name of the file (without extension).
+            save_format (str): Image format to save ('png' or 'svg').
+            ylabel (str): Label for the Y-axis.
+            title (str): Title of the plot.
+            data (dict[str, list[float]]): Dictionary mapping series labels to Y-axis data.
+            xlabel (str, optional): Label for the X-axis. Defaults to "Epochs".
+            show (bool, optional): Whether to display the plot interactively. Defaults to False.
+            ylim (Optional[tuple[float, float]], optional): Y-axis limits as (min, max). Defaults to None.
+            markers (bool, optional): Whether to add markers on data points. Defaults to False.
+
+        Raises:
+            ValueError: If `save_format` is not 'png' or 'svg'.
         """
         if save_format not in {"png", "svg"}:
             raise ValueError("Invalid save_format. Only 'png' and 'svg' are supported.")
@@ -277,14 +277,18 @@ class Logger:
         only_state_dict: bool = True,
     ) -> None:
         """
-        Save model weights in .pth format, including epoch in filename.
+        Save model weights to a `.pth` file, including the epoch number in the filename.
 
         Args:
-            path: Subdirectory to save the weights.
-            filename: File name (without extension).
-            model: PyTorch model.
-            epoch: The epoch number to include in the filename.
-            only_state_dict: Save only model state dict. Defaults to True.
+            path (Path): Subdirectory under the logger root to save the weights.
+            filename (str): Base filename without extension.
+            model (nn.Module): PyTorch model instance.
+            epoch (int): Epoch number to include in the filename.
+            only_state_dict (bool, optional): If True, save only the model's state dictionary.
+                If False, save the entire model. Defaults to True.
+
+        Raises:
+            Exception: Propagates exceptions encountered during saving.
         """
 
         original_device = next(model.parameters()).device
@@ -328,20 +332,19 @@ class Logger:
         clamp: bool = True,
     ) -> None:
         """
-        Save individual input images with predicted and true labels as filenames.
-        Optionally, save a grid of the first (nrows × ncols) predictions.
+        Save individual images with predicted and true labels as filenames.
+        Optionally, save and display a grid of the first (nrows × ncols) predictions.
 
         Args:
-            path: Directory where the images will be saved.
-            filename: Base name for the grid image file.
-            model: Trained PyTorch model.
-            dataset: Dataset to draw examples from.
-            nrows: Number of rows for grid.
-            ncols: Number of columns for grid.
-            save_grid: Whether to save a large grid image.
-            show_grid: Whether to display the grid image after saving.
-            device: Device to run inference on.
-            clamp: Clamp float image data to [0, 1] before saving. Defaults to True.
+            path (Path): Directory to save images.
+            filename (str): Base filename for the grid image.
+            model (nn.Module): Trained PyTorch model.
+            dataset (Dataset): Dataset to sample images from.
+            nrows (int): Number of rows in the grid.
+            ncols (int): Number of columns in the grid.
+            save_grid (bool): Whether to save a grid image of predictions.
+            show_grid (bool): Whether to display the grid image.
+            clamp (bool, optional): Clamp float images to [0,1] before saving. Defaults to True.
         """
         original_device = next(model.parameters()).device
 
@@ -407,18 +410,18 @@ class Logger:
         show: bool = False,
     ) -> None:
         """
-        Save a trigger pattern on a uniform background and optionally on real samples.
+        Save a trigger pattern on a uniform background and optionally on real dataset samples.
 
         Args:
-            path: Directory to save images.
-            filename: Base filename (without extension).
-            trigger_policy: Trigger transform with a `.name` attribute.
-            bg_size: Shape of the background (C, H, W).
-            bg_color: Float value to fill the background [0, 1].
-            dataset: Optional dataset to draw real images from.
-            n_samples: Number of real images to apply the trigger to.
-            clamp: Clamp float images to [0, 1] before saving.
-            show: Whether to display the background image.
+            path (Path): Directory to save images.
+            filename (str): Base filename (without extension).
+            trigger_policy (v2.Transform): Trigger transform with `.name` attribute.
+            bg_size (tuple[int, int, int]): Background shape (C, H, W).
+            bg_color (float): Background fill color in [0, 1].
+            dataset (Optional[Dataset]): Optional dataset to sample real images.
+            n_samples (int): Number of real images to apply the trigger to.
+            clamp (bool): Clamp float images to [0, 1] before saving.
+            show (bool): Whether to display the background image.
         """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -474,6 +477,17 @@ class Logger:
         aggregation: bool = False,
         overview: bool = False,
     ) -> None:
+        """
+        Save feature maps from multiple layers to disk as PNG images.
+
+        Args:
+            path (Path): Directory where feature maps will be saved.
+            feature_dict (dict[str, torch.Tensor]): Mapping from layer names to feature tensors.
+                Each tensor shape: (batch_size, channels, height, width).
+            normalize (bool): Whether to normalize each feature map to [0, 1] before saving.
+            aggregation (bool): Whether to save aggregated (mean) feature maps per sample.
+            overview (bool): Whether to save overview grid plots of all feature maps per sample.
+        """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -547,6 +561,16 @@ class Logger:
         normalize: bool = True,
         overview: bool = False,
     ) -> None:
+        """
+        Save heatmaps (e.g., Grad-CAM overlays) as PNG images per sample, optionally with an overview grid.
+
+        Args:
+            path (Path): Directory to save heatmaps.
+            overlays_dict (dict[str, torch.Tensor]): Mapping from layer names to heatmap tensors.
+                Each tensor shape: (batch_size, channels, height, width).
+            normalize (bool): Normalize heatmaps to [0, 1] before saving.
+            overview (bool): Save an overview grid image of heatmaps per layer.
+        """
         save_dir = self.root / path
         save_dir.mkdir(parents=True, exist_ok=True)
 
