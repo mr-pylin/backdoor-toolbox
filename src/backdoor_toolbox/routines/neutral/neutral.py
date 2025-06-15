@@ -17,8 +17,16 @@ logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"]
 
 
 class NeutralRoutine(BaseRoutine):
+    """Routine for training, validating, and testing a model on a clean (non-poisoned) dataset."""
 
     def __init__(self):
+        """
+        Initialize the NeutralRoutine.
+
+        - Sets a manual random seed.
+        - Saves the current configuration for reproducibility.
+        """
+
         # set manual seed
         torch.manual_seed(config["misc"]["seed"])
 
@@ -30,6 +38,14 @@ class NeutralRoutine(BaseRoutine):
         )
 
     def apply(self) -> None:
+        """
+        Execute the entire routine:
+        - Prepare datasets.
+        - Prepare model.
+        - Train and validate the model.
+        - Test the model.
+        """
+
         # prepare datasets
         train_set, val_set, test_set = self._prepare_data()
 
@@ -43,6 +59,12 @@ class NeutralRoutine(BaseRoutine):
         self._test(test_set, model)
 
     def _prepare_data(self) -> tuple[Dataset, Dataset, Dataset]:
+        """
+        Load and preprocess the dataset.
+
+        Returns:
+            tuple: A tuple of (train_set, val_set, test_set) as torch Dataset objects.
+        """
 
         # import dataset class
         dataset_cls = getattr(
@@ -69,10 +91,7 @@ class NeutralRoutine(BaseRoutine):
         )
 
         # split train set into train and validation set
-        train_set, val_set = random_split(
-            train_set,
-            config["train_val"]["train_val_ratio"],
-        )
+        train_set, val_set = random_split(train_set, config["train_val"]["train_val_ratio"])
 
         # normalize (standardize) samples if needed
         if config["dataset"]["normalize"]:
@@ -85,6 +104,12 @@ class NeutralRoutine(BaseRoutine):
         return train_set, val_set, test_set
 
     def _prepare_model(self) -> nn.Module:
+        """
+        Instantiate the model with parameters specified in the configuration.
+
+        Returns:
+            nn.Module: A PyTorch model ready for training.
+        """
 
         # import model class
         model_cls = getattr(
@@ -104,7 +129,16 @@ class NeutralRoutine(BaseRoutine):
 
         return model
 
-    def _train_and_validate(self, train_set, val_set, model: nn.Module) -> None:
+    def _train_and_validate(self, train_set: Dataset, val_set: Dataset, model: nn.Module) -> None:
+        """
+        Train and validate the model over several epochs.
+
+        Args:
+            train_set (Dataset): Training dataset.
+            val_set (Dataset): Validation dataset.
+            model (nn.Module): The model to train and evaluate.
+        """
+
         # save stats per epoch
         train_loss_per_epoch, train_acc_per_epoch = [], []
         val_loss_per_epoch, val_acc_per_epoch = [], []
@@ -271,7 +305,15 @@ class NeutralRoutine(BaseRoutine):
                 clamp=config["logger"]["pred_demo"]["clamp"],
             )
 
-    def _test(self, test_set, model: nn.Module) -> None:
+    def _test(self, test_set: Dataset, model: nn.Module) -> None:
+        """
+        Evaluate the model on the test set and save test performance and confusion matrix.
+
+        Args:
+            test_set (Dataset): Test dataset.
+            model (nn.Module): Trained model to evaluate.
+        """
+
         # save true/pred labels for confusion matrix
         true_labels = []
         predictions = []

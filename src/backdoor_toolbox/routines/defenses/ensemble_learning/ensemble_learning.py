@@ -23,7 +23,21 @@ logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"]
 
 
 class EnsembleLearningRoutine(BaseRoutine):
+    """
+    Routine to evaluate an ensemble of models against backdoor attacks.
+
+    This includes loading multiple independently trained models
+    (e.g., from different service providers) and testing them on both
+    clean and poisoned test sets to evaluate CDA and ASR.
+    """
+
     def __init__(self):
+        """
+        Initialize the EnsembleLearningRoutine.
+
+        - Sets random seeds for reproducibility.
+        - Saves the configuration file to disk.
+        """
 
         # set manual seed
         torch.manual_seed(seed=config["misc"]["seed"])
@@ -37,6 +51,14 @@ class EnsembleLearningRoutine(BaseRoutine):
         )
 
     def apply(self) -> None:
+        """
+        Run the ensemble learning routine:
+
+        - Prepare poisoned and clean test sets for all service providers.
+        - Load models trained by the service providers.
+        - Evaluate the ensemble on ASR and CDA metrics.
+        """
+
         # prepare test sets for each service provider including both cda and asr test sets
         test_sets_asr, test_set_cda = self._prepare_data()
 

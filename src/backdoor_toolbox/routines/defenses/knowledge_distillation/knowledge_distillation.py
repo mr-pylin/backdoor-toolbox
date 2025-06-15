@@ -27,7 +27,24 @@ logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"]
 
 
 class KnowledgeDistillationRoutine(BaseRoutine):
+    """
+    Routine for staged knowledge distillation.
+
+    This routine performs staged training:
+    - Stage 1: Distill knowledge from multiple teacher models to a teacher assistant (TA).
+    - Stage 2 (optional): Distill knowledge from TA to a student model.
+
+    Each stage includes training/validation, testing on ASR/CDA, and analysis via feature maps and Grad-CAM.
+    """
+
     def __init__(self):
+        """
+        Initialize the knowledge distillation routine.
+
+        - Sets random seeds for reproducibility.
+        - Initializes a NumPy RNG for consistent sampling.
+        - Saves the current configuration for reproducibility.
+        """
 
         # set manual seed
         torch.manual_seed(seed=config["misc"]["seed"])
@@ -42,6 +59,16 @@ class KnowledgeDistillationRoutine(BaseRoutine):
         )
 
     def apply(self) -> None:
+        """
+        Apply the full knowledge distillation process.
+
+        - Prepares the datasets: clean/poisoned test sets and distillation training/validation sets.
+        - Initializes models: N teachers, one TA model, and optionally a student model.
+        - Trains the TA from the teachers (Stage 1).
+        - Optionally trains the student from the TA (Stage 2).
+        - Evaluates each stage on ASR, CDA, feature maps, and Grad-CAM.
+        """
+
         # prepare test sets for each service provider including both cda and asr test sets
         test_sets_asr, test_set_cda, f_trainset, f_valset = self._prepare_data()
 

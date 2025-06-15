@@ -27,8 +27,21 @@ logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"]
 
 
 class MultiAttackRoutine(BaseRoutine):
+    """
+    Routine to handle multiple independent service providers (SPs),
+    each with their own poisoned training and testing data.
+    Includes training, validation, testing, and post-analysis such as
+    cross-ASR, feature maps, and Grad-CAM.
+    """
 
     def __init__(self):
+        """
+        Initialize the MultiAttackRoutine.
+
+        - Sets manual random seeds for reproducibility.
+        - Saves the current configuration to disk for reproducibility.
+        """
+
         # set manual seed
         torch.manual_seed(seed=config["misc"]["seed"])
         random.seed(config["misc"]["seed"])
@@ -41,6 +54,15 @@ class MultiAttackRoutine(BaseRoutine):
         )
 
     def apply(self) -> None:
+        """
+        Run the multi-attack routine:
+        - Prepare datasets for each service provider.
+        - Prepare a model for each provider.
+        - Train and validate each model on its corresponding dataset.
+        - Evaluate each model on both poisoned and clean test sets.
+        - Perform cross-ASR, feature map analysis, and Grad-CAM visualization.
+        """
+
         # prepare datasets for each service provider including train, val, test sets
         # each service provider has its own poisoned test set
         # there is also a global clean test set for measuring the results
