@@ -69,46 +69,41 @@ class CustomResNet(ResNet):
             if verbose:
                 print(f"Loaded weights from {weights}")
         elif weights is None and verbose:
-            print("No pretrained weights")
+            print("No pretrained weights used")
 
         self.to(device)
 
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)  # identity
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)  # identity
+
+        # Apply global average pooling to get [B, C, 1, 1]
+        x = nn.functional.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1)  # Now [B, C]
+        x = self.fc(x)
+        return x
+
 
 if __name__ == "__main__":
-    model_1 = CustomResNet(
+    model = CustomResNet(
         arch="resnet18",
-        in_channels=1,
-        num_classes=10,
-        weights=True,
-        device="cpu",
-        verbose=True,
-    )
-    model_2 = CustomResNet(
-        arch="resnet50",
-        in_channels=3,
-        num_classes=1000,
-        weights=True,
-        device="cuda",
-        verbose=True,
-    )
-    model_3 = CustomResNet(
-        arch="resnet101",
         in_channels=1,
         num_classes=10,
         weights=None,
         device="cpu",
         verbose=True,
     )
-    model_4 = CustomResNet(
-        arch="resnet152",
-        in_channels=3,
-        num_classes=5,
-        weights="temp.pth",
-        device="cpu",
-        verbose=True,
-    )
 
-    print(model_1)
-    print(model_2)
-    print(model_3)
-    print(model_4)
+    # Print named parameters
+    for name, param in model.named_parameters():
+        print(f"{name}: {tuple(param.shape)}")
+
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total parameters: {total_params:,}")
