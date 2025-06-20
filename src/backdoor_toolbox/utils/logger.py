@@ -24,7 +24,7 @@ class Logger:
       verbose: Whether to print status messages.
     """
 
-    def __init__(self, root: Path, verbose: bool = True):
+    def __init__(self, root: Path, sub_root: str | None, verbose: bool = True):
         """
         Initialize the Logger instance.
 
@@ -32,9 +32,13 @@ class Logger:
 
         Args:
             root (Path): Root directory where the log folder will be created.
+            subroot (str): Sub-Root directory where the log folder will be created
             verbose (bool, optional): If True, enables console output during logging operations. Defaults to True.
         """
-        self.root = Path(f"{root}/{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
+        if sub_root is None:
+            self.root = Path(f"{root}/{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
+        else:
+            self.root = Path(f"{root}/{sub_root}/{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}")
         self.verbose = verbose
 
         # Make directory if not available

@@ -19,7 +19,7 @@ from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
 
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
+logger = Logger(root=config["logger"]["root"], sub_root=config["logger"]["sub_root"], verbose=config["misc"]["verbose"])
 
 
 class EnsembleLearningRoutine(BaseRoutine):

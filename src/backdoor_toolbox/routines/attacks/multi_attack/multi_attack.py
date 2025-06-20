@@ -23,7 +23,7 @@ from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
 from backdoor_toolbox.utils.stats import calculate_mean_and_std
 
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
+logger = Logger(root=config["logger"]["root"], sub_root=None, verbose=config["misc"]["verbose"])
 
 
 class MultiAttackRoutine(BaseRoutine):

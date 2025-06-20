@@ -22,7 +22,7 @@ config = {
         },
     },
     "checkpoint": {
-        "root": "./logs/attack/multi_attack/2025-06-13-04-03-29",
+        "root": "./logs/attack/multi_attack/2025-06-15-06-02-40",  # also update in config["logger"]["sub_root"]
         "model_dict": "sp{0}/model/config.json",
         "model_weight": "sp{0}/model/weights/model_epoch_15.pth",
         "hyperparameters": "sp{0}/train/hyperparameters.json",
@@ -99,6 +99,7 @@ config = {
     },
     "logger": {
         "root": "./logs/defense/knowledge_distillation",
+        "sub_root": "2025-06-15-06-02-40",
         "config": {
             "src_path": "src/backdoor_toolbox/routines/defenses/ensemble_learning",
             "dst_path": "",
