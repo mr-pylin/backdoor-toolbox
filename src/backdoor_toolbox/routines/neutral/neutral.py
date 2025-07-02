@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import torch
@@ -13,7 +14,7 @@ from backdoor_toolbox.utils.logger import Logger
 from backdoor_toolbox.utils.stats import calculate_mean_and_std
 
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(root=config["logger"]["root"], verbose=config["misc"]["verbose"])
+logger = Logger(root=config["logger"]["root"], sub_root=config["logger"]["sub_root"], verbose=config["misc"]["verbose"])
 
 
 class NeutralRoutine(BaseRoutine):
@@ -91,7 +92,7 @@ class NeutralRoutine(BaseRoutine):
         )
 
         # split train set into train and validation set
-        train_set, val_set = random_split(train_set, config["train_val"]["train_val_ratio"])
+        train_set, val_set = random_split(train_set, config["train"]["train_val_ratio"])
 
         # normalize (standardize) samples if needed
         if config["dataset"]["normalize"]:
@@ -119,13 +120,26 @@ class NeutralRoutine(BaseRoutine):
 
         # initialize the model
         model = model_cls(
-            arch=config["modules"]["model"]["params"]["arch"],
+            arch=config["modules"]["model"]["arch"],
             in_channels=config["dataset"]["image_shape"][0],
             num_classes=config["dataset"]["num_classes"],
-            weights=config["modules"]["model"]["params"]["weights"],
+            weights=config["modules"]["model"]["weights"],
             device=config["misc"]["device"],
             verbose=config["misc"]["verbose"],
         )
+
+        # log
+        if config["modules"]["model"]["extract_configuration"]:
+            save_path = Path(f"{logger.root}/{config["modules"]["model"]["extract_path"]}")
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            model_config = {
+                "file": config["modules"]["model"]["file"],
+                "class": config["modules"]["model"]["class"],
+                "arch": config["modules"]["model"]["arch"],
+                "weights": config["modules"]["model"]["weights"],
+            }
+            with open(save_path, "w") as f:
+                json.dump(model_config, f, indent=4)
 
         return model
 
@@ -144,25 +158,25 @@ class NeutralRoutine(BaseRoutine):
         val_loss_per_epoch, val_acc_per_epoch = [], []
 
         # initialize data loaders
-        train_loader = DataLoader(train_set, batch_size=config["train_val"]["train_batch_size"], shuffle=True)
-        val_loader = DataLoader(val_set, batch_size=config["train_val"]["val_batch_size"], shuffle=False)
+        train_loader = DataLoader(train_set, batch_size=config["train"]["train_batch_size"], shuffle=True)
+        val_loader = DataLoader(val_set, batch_size=config["train"]["val_batch_size"], shuffle=False)
 
         # initialize criterion, optimizer and lr_scheduler
         criterion = nn.CrossEntropyLoss()
-        optimizer: optim.Optimizer = config["train_val"]["optimizer"](
+        optimizer: optim.Optimizer = config["train"]["optimizer"](
             model.parameters(),
-            **config["train_val"]["optimizer_params"],
+            **config["train"]["optimizer_params"],
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            **config["train_val"]["scheduler_params"],
+            **config["train"]["scheduler_params"],
         )
 
         # initialize train and validation accuracy metric
         train_acc_metric = MulticlassAccuracy(config["dataset"]["num_classes"]).to(config["misc"]["device"])
         val_acc_metric = MulticlassAccuracy(config["dataset"]["num_classes"]).to(config["misc"]["device"])
 
-        epochs = config["train_val"]["epochs"]
+        epochs = config["train"]["epochs"]
 
         # store hyperparameters as a json file
         logger.save_hyperparameters(

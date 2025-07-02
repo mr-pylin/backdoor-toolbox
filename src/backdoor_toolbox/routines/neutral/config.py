@@ -17,10 +17,10 @@ config = {
             "root": "models.cnn",
             "file": "resnet_wrapper",
             "class": "CustomResNet",
-            "params": {
-                "arch": "resnet18",
-                "weights": None,  # options: {None, True, ".pth file"}
-            },
+            "arch": "resnet18",
+            "weights": None,  # options: {None, True, ".pth file"}
+            "extract_configuration": True,
+            "extract_path": "/model/config.json",
         },
     },
     "dataset": {
@@ -29,10 +29,10 @@ config = {
         "target_transform": None,
         "download": False,
         "image_shape": (1, 28, 28),  # consider `image_shape` after passing through `v2.ToImage()`
-        "normalize": True,  # whether to use v2.Normalize() or not
+        "normalize": False,  # whether to use v2.Normalize() or not
         "num_classes": 10,
     },
-    "train_val": {
+    "train": {
         "train_test_ratio": (0.8, 0.2),  # (train, test) split
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
         "epochs": 15,
@@ -47,27 +47,28 @@ config = {
     },
     "logger": {
         "root": "./logs/neutral",
+        "sub_root": "MNIST",
         "config": {
             "src_path": "src/backdoor_toolbox/routines/neutral",
             "dst_path": "",
             "filename": "config",
         },
         "hyperparameters": {
-            "path": "train_val",
+            "path": "train",
             "filename": "hyperparameters",
         },
         "metrics": {
-            "train_path": "train_val/metrics",
+            "train_path": "train/metrics",
             "test_path": "test/metrics",
             "filename": "report",
         },
         "weights": {
-            "path": "train_val/weights",
+            "path": "model/weights",
             "filename": "model",
             "only_state_dict": True,
         },
         "plot_metrics": {
-            "path": "train_val/metrics",
+            "path": "train/metrics",
             "save_format": "svg",
             "show": False,
             "markers": True,
@@ -89,7 +90,7 @@ config = {
             "filename": "confusion_matrix",
         },
         "pred_demo": {
-            "train_path": "train_val/demo",
+            "train_path": "train/demo",
             "test_path": "test/demo",
             "nrows": 8,
             "ncols": 24,
