@@ -171,3 +171,6 @@ logs/
 
 # vscode
 .vscode/
+
+# vscode line counter
+.VSCodeCounter/
