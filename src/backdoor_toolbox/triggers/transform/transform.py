@@ -1,12 +1,14 @@
+import math
 import random
 from enum import Enum
 
 import torch
 import torch.nn.functional as F
+from torchvision.io import read_image
 
 # from PIL import Image
-from torchvision.transforms import v2, functional as tf
-from torchvision.io import read_image
+from torchvision.transforms import functional as tf
+from torchvision.transforms import v2
 
 from backdoor_toolbox.triggers.transform.base import InjectTrigger
 
@@ -306,190 +308,204 @@ class TriggerTypes(Enum):
 
 
 class TriggerSelector:
-    """
-    Policy for generating N random backdoor triggers.
-
-    Attributes:
-        image_shape (tuple[int, int, int]): Image shape (C, H, W).
-        trigger_types (list): List of available trigger classes.
-        num_attacks (int): Number of distinct triggers to generate.
-    """
-
     def __init__(
         self,
         image_shape: tuple[int, int, int],
-        trigger_types: list,
+        trigger_types: list[type],
         num_triggers: int,
-        blend_images: list,
-        seed: int = 42,
+        blend_images: list[torch.Tensor],
+        *,
+        seed,
+        num_similarity: int = 0,
+        similarity_ratio: float = 0.0,
     ):
         self.image_shape = image_shape
         self.trigger_types = trigger_types
         self.num_triggers = num_triggers
-        self.blend_images = blend_images
+        self.blend_images = blend_images.copy()
+        self._all_blend_images = blend_images.copy()
+        self.num_similarity = num_similarity
+        self.similarity_ratio = similarity_ratio
         random.seed(seed)
         torch.manual_seed(seed)
 
     def _random_color(self, num_channels: int) -> tuple[float, ...]:
-        """Generates a random color tuple with values in [0, 1]."""
         return tuple(random.random() for _ in range(num_channels))
 
     def _random_size(self) -> tuple[int, int]:
-        """
-        Generates a random size for the trigger based on a fraction of the image dimensions.
-        For example, size will be between 5% and 20% of image width and height.
-        """
         _, H, W = self.image_shape
-        size = random.randint(3, max(1, int(0.2 * W)))
-        return (size, size)
+        size_x = random.randint(3, max(1, int(0.2 * W)))
+        size_y = random.randint(3, max(1, int(0.2 * H)))
+        return (size_x, size_y)
 
     def _random_position(self, size: tuple[int, int]) -> tuple[int, int]:
-        """
-        Generates a random position (top-left corner) for the trigger near the image borders,
-        ensuring at least a 1-pixel offset from the edges.
-        """
         _, H, W = self.image_shape
         size_x, size_y = size
-
-        border_margin = max(2, int(0.2 * min(H, W)))  # Define a border width (at least 2 pixels)
-
-        # Select from the border regions but with a 1-pixel offset from the absolute edge
+        border = max(2, int(0.2 * min(H, W)))
         pos_x = random.choice(
             [
-                random.randint(1, border_margin - 1),  # Left border (not at 0)
-                random.randint(W - size_x - border_margin + 1, W - size_x - 1),  # Right border (not at W - size_x)
+                random.randint(1, border - 1),
+                random.randint(W - size_x - border + 1, W - size_x - 1),
             ]
         )
-
         pos_y = random.choice(
             [
-                random.randint(1, border_margin - 1),  # Top border (not at 0)
-                random.randint(H - size_y - border_margin + 1, H - size_y - 1),  # Bottom border (not at H - size_y)
+                random.randint(1, border - 1),
+                random.randint(H - size_y - border + 1, H - size_y - 1),
             ]
         )
-
         return (pos_x, pos_y)
 
-    def get_triggers(self) -> list:
-        """
-        Generates and returns a list of trigger instances with randomized parameters.
-        """
-        triggers = []
+    def _make_random(self, cls: type) -> torch.nn.Module:
         C, _, _ = self.image_shape
+        if cls.__name__ == "InjectBlendTrigger":
+            if not self.blend_images:
+                self.blend_images = self._all_blend_images.copy()
+            alpha = random.uniform(0.05, 0.1)
+            # alpha = random.uniform(0.15, 0.2)  # for cifar10
+            idx = random.randrange(len(self.blend_images))
+            trigger_img = self.blend_images.pop(idx)
+            return cls(self.image_shape, trigger_image=trigger_img, alpha=alpha)
 
-        for _ in range(self.num_triggers):
-            # Randomly select a trigger type.
-            trigger_cls = random.choice(self.trigger_types)
+        size = self._random_size()
+        pos = self._random_position(size)
 
-            # Generate random size and position.
-            size = self._random_size()
-            position = self._random_position(size)
+        if cls.__name__ == "InjectSolidTrigger":
+            color = self._random_color(C)
+            return cls(self.image_shape, color=color, size=size, position=pos)
+        if cls.__name__ == "InjectPatternTrigger":
+            levels = 64  # 1/64 = 0.015625 steps
+            a = random.randint(0, levels - 1)
+            b = random.randint(0, levels - 2)
+            if b >= a:
+                b += 1  # ensure b ≠ a
+            colors = (a / (levels - 1), b / (levels - 1))
+            return cls(self.image_shape, color=colors, size=size, position=pos)
+        if cls.__name__ == "InjectNoiseTrigger":
+            return cls(self.image_shape, noise_range=(0.2, 1.0), size=size, position=pos)
+        # fallback
+        color = self._random_color(C)
+        return InjectSolidTrigger(self.image_shape, color=color, size=size, position=pos)
 
-            # Depending on trigger type, randomize parameters.
-            if trigger_cls.__name__ == "InjectSolidTrigger":
-                color = self._random_color(C)
-                trigger = trigger_cls(self.image_shape, color=color, size=size, position=position)
+    def _perturb(self, trig: torch.nn.Module, ratio: float) -> torch.nn.Module:
+        """
+        ratio=1.0 => identical; ratio=0.0 => fully random within allowed bounds
+        """
+        cls = trig.__class__
+        C, H, W = self.image_shape
 
-            elif trigger_cls.__name__ == "InjectPatternTrigger":
-                # Pattern trigger requires two alternating colors.
-                colors = (random.random(), random.random())
-                trigger = trigger_cls(self.image_shape, color=colors, size=size, position=position)
+        # size
+        sx, sy = trig.size
+        rand_sx, rand_sy = self._random_size()
+        new_sx = int(sx * ratio + rand_sx * (1 - ratio))
+        new_sy = int(sy * ratio + rand_sy * (1 - ratio))
+        new_size = (min(max(1, new_sx), W), min(max(1, new_sy), H))
 
-            elif trigger_cls.__name__ == "InjectNoiseTrigger":
-                trigger = trigger_cls(self.image_shape, noise_range=(0.2, 1.0), size=size, position=position)
+        # position drift bounded by size (like a kernel around original pos)
+        px, py = trig.position
+        max_dx = new_size[0] + sx
+        max_dy = new_size[1] + sy
 
-            elif trigger_cls.__name__ == "InjectBlendTrigger":
-                color = self._random_color(C)
-                alpha = random.uniform(0.03, 0.1)
-                trigger_image = random.choice(self.blend_images)
-                self.blend_images = [img for img in self.blend_images if img is not trigger_image]
-                trigger = trigger_cls(self.image_shape, trigger_image=trigger_image, alpha=alpha)
+        drift_x = (1 - ratio) * random.randint(-max_dx, max_dx)
+        drift_x = int(math.ceil(drift_x) if drift_x > 0 else math.floor(drift_x))
+        drift_y = (1 - ratio) * random.randint(-max_dy, max_dy)
+        drift_y = int(math.ceil(drift_y) if drift_y > 0 else math.floor(drift_y))
 
+        new_px = min(max(0, px + drift_x), W - new_size[0])
+        new_py = min(max(0, py + drift_y), H - new_size[1])
+        new_pos = (new_px, new_py)
+
+        kwargs = {"image_shape": self.image_shape, "size": new_size, "position": new_pos}
+        if cls.__name__ == "InjectSolidTrigger":
+            oc = trig.color.tolist()
+            rc = [random.random() for _ in oc]
+            new_c = tuple(o * ratio + r * (1 - ratio) for o, r in zip(oc, rc))
+            kwargs["color"] = new_c
+        elif cls.__name__ == "InjectPatternTrigger":
+            c0, c1 = trig.color
+            # rc0, rc1 = random.random(), random.random()
+
+            levels = 64  # 1/64 = 0.015625 steps
+            a = random.randint(0, levels - 1)
+            b = random.randint(0, levels - 2)
+            if b >= a:
+                b += 1  # ensure b ≠ a
+            rc0, rc1 = (a / (levels - 1), b / (levels - 1))
+
+            kwargs["color"] = (c0 * ratio + rc0 * (1 - ratio), c1 * ratio + rc1 * (1 - ratio))
+
+        return cls(**kwargs)
+
+    def get_triggers(self) -> list[torch.nn.Module]:
+        triggers: list[torch.nn.Module] = []
+        sim_base = None
+
+        # similar group (exclude blend)
+        if self.num_similarity > 0:
+            non_blend = [
+                t for t in self.trigger_types if t.__name__ not in {"InjectBlendTrigger", "InjectNoiseTrigger"}
+            ]
+
+            if not non_blend:
+                raise ValueError("No non-blend types for similarity")
+            sim_base = random.choice(non_blend)
+            base = self._make_random(sim_base)
+            triggers.append(base)
+            for _ in range(self.num_similarity - 1):
+                triggers.append(self._perturb(base, self.similarity_ratio))
+
+        # remaining: uniform over others
+        rem = self.num_triggers - len(triggers)
+        if rem > 0:
+            if sim_base:
+                cands = [t for t in self.trigger_types if t is not sim_base]
             else:
-                # Fallback: use a solid trigger.
-                color = self._random_color(C)
-                trigger = InjectSolidTrigger(self.image_shape, color=color, size=size, position=position)
+                cands = list(self.trigger_types)
+            n = len(cands)
+            q, r = divmod(rem, n)
+            for i, cls in enumerate(cands):
+                cnt = q + (1 if i < r else 0)
+                for _ in range(cnt):
+                    triggers.append(self._make_random(cls))
 
-            triggers.append(trigger)
-
+        random.shuffle(triggers)
         return triggers
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
+    import torchvision.transforms as T
+    from PIL import Image
 
-    ROW = 3
-    COL = 4
-    NUM_ATTACKS = ROW * COL
-    SEED = 0
-    TRIGGERS = (InjectSolidTrigger, InjectPatternTrigger, InjectNoiseTrigger, InjectBlendTrigger)
+    # load an example image and prepare blend images list
+    img1 = Image.open("assets/blend_trigger/kitty.jpg").convert("RGB")  # replace with your image path
+    img2 = Image.open("assets/blend_trigger/creeper.jpg").convert("RGB")
+    to_tensor = T.ToTensor()
+    image_tensor1 = to_tensor(img1)
+    image_tensor2 = to_tensor(img2)  # shape: C, H, W
 
-    # import a trigger image
-    transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-    trigger_image_1 = transform(tf.rgb_to_grayscale(read_image(r"./assets/blend_trigger/noise.jpg")))
-    trigger_image_2 = transform(tf.rgb_to_grayscale(read_image(r"./assets/blend_trigger/kitty.jpg")))
+    # suppose we have some images for blending
+    blend_imgs = [image_tensor1, image_tensor2]  # dummy blend images
 
-    # solid image
-    GRAYSCALE_IMAGE_SIZE = (1, 28, 28)
-    transform = v2.Compose(
-        [
-            v2.Resize((GRAYSCALE_IMAGE_SIZE[1], GRAYSCALE_IMAGE_SIZE[2])),
-            # v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),
-        ]
+    selector = TriggerSelector(
+        image_shape=(3, 32, 32),
+        trigger_types=[InjectSolidTrigger, InjectPatternTrigger, InjectNoiseTrigger, InjectBlendTrigger],
+        num_triggers=7,
+        blend_images=blend_imgs,
+        seed=1,
+        num_similarity=6,
+        similarity_ratio=0.75,
     )
-    grayscale_image = torch.full(size=GRAYSCALE_IMAGE_SIZE, fill_value=0.5, dtype=torch.float32)
-    grayscale_policies = TriggerSelector(
-        image_shape=GRAYSCALE_IMAGE_SIZE,
-        trigger_types=TRIGGERS,
-        num_triggers=NUM_ATTACKS,
-        blend_images=[trigger_image_1, trigger_image_2],
-        seed=SEED,
-    ).get_triggers()
-    grayscale_images_transformed = [policy(grayscale_image).permute(1, 2, 0) for policy in grayscale_policies]
 
-    # plot original and triggered images
-    fig, axs = plt.subplots(nrows=ROW, ncols=COL, figsize=(4 * COL, 4 * ROW))
-    for r in range(ROW):
-        for c in range(COL):
-            axs[r, c].imshow(grayscale_images_transformed[COL * r + c], cmap="gray", vmin=0, vmax=1)
-            axs[r, c].set_title(
-                f"{grayscale_policies[COL * r + c].__class__.__name__}-{grayscale_policies[COL * r + c].size}-{grayscale_policies[COL * r + c].position}"
-            )
-            axs[r, c].axis("off")
-    plt.show()
+    triggers = selector.get_triggers()
+    # apply triggers to a copy of the image
+    applied = []
+    for trig in triggers:
+        img_copy = torch.ones((3, 32, 32))
+        masked = trig(img_copy)
+        applied.append(masked)
 
-    # import a trigger image
-    transform = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
-    trigger_image_1 = transform(read_image(r"./assets/blend_trigger/noise.jpg"))
-    trigger_image_2 = transform(read_image(r"./assets/blend_trigger/kitty.jpg"))
-
-    # solid image
-    RGB_IMAGE_SIZE = (3, 28, 28)
-    transform = v2.Compose(
-        [
-            v2.Resize((RGB_IMAGE_SIZE[1], RGB_IMAGE_SIZE[2])),
-            # v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),
-        ]
-    )
-    rgb_image = torch.full(size=RGB_IMAGE_SIZE, fill_value=0.5, dtype=torch.float32)
-    rgb_policies = TriggerSelector(
-        image_shape=RGB_IMAGE_SIZE,
-        trigger_types=TRIGGERS,
-        num_triggers=NUM_ATTACKS,
-        blend_images=[trigger_image_1, trigger_image_2],
-        seed=SEED,
-    ).get_triggers()
-    rgb_images_transformed = [policy(rgb_image).permute(1, 2, 0) for policy in rgb_policies]
-
-    # plot original and triggered images
-    fig, axs = plt.subplots(nrows=ROW, ncols=COL, figsize=(4 * COL, 4 * ROW))
-    for r in range(ROW):
-        for c in range(COL):
-            axs[r, c].imshow(rgb_images_transformed[COL * r + c], cmap="gray", vmin=0, vmax=1)
-            axs[r, c].set_title(
-                f"{rgb_policies[COL * r + c].__class__.__name__}-{rgb_policies[COL * r + c].size}-{rgb_policies[COL * r + c].position}"
-            )
-            axs[r, c].axis("off")
-    plt.show()
+    # for visualization, convert back to PIL and save
+    to_pil = T.ToPILImage()
+    for idx, tens in enumerate(applied):
+        pil_img = to_pil(tens)
+        pil_img.save(f"output_trigger_{idx}.png")
