@@ -23,7 +23,7 @@ from backdoor_toolbox.utils.metrics import AttackSuccessRate, CleanDataAccuracy
 from backdoor_toolbox.utils.stats import calculate_mean_and_std
 
 # instantiate a logger to save parameters, plots, weights, ...
-logger = Logger(root=config["logger"]["root"], sub_root=None, verbose=config["misc"]["verbose"])
+logger = Logger(root=config["logger"]["root"], sub_root=config["logger"]["sub_root"], verbose=config["misc"]["verbose"])
 
 
 class MultiAttackRoutine(BaseRoutine):
@@ -70,7 +70,7 @@ class MultiAttackRoutine(BaseRoutine):
         sp_datasets, test_set_cda = self._prepare_data()
 
         # prepare model and initialize weights
-        sp_models = self._prepare_models()
+        clean_model, sp_models = self._prepare_models()
 
         # train, validate and test each service provider
         for sp in range(len(sp_datasets)):
@@ -99,7 +99,8 @@ class MultiAttackRoutine(BaseRoutine):
         # examine cross model and dataset asr metric
         self._analyze_cross_test(
             test_sets_asr=[sp_datasets[f"sp{i+1}"]["test_asr"] for i in range(len(sp_datasets))],
-            models=sp_models,
+            sp_models=sp_models,
+            clean_base_model=clean_model,
         )
 
         # feature-map analysis
@@ -198,6 +199,8 @@ class MultiAttackRoutine(BaseRoutine):
             num_triggers=config["dataset"]["num_subsets"],
             blend_images=blend_images,
             seed=config["misc"]["seed"],
+            num_similarity=config["trigger"]["num_similarity"],
+            similarity_ratio=config["trigger"]["similarity_ratio"],
         )
         triggers = trigger_selector.get_triggers()
 
@@ -287,7 +290,7 @@ class MultiAttackRoutine(BaseRoutine):
 
         return subsets_dict, test_set_cda
 
-    def _prepare_models(self) -> list[nn.Module]:
+    def _prepare_models(self) -> tuple[nn.Module, list[nn.Module]]:
         """
         Prepare and initialize one model for each service provider.
 
@@ -372,7 +375,40 @@ class MultiAttackRoutine(BaseRoutine):
 
             sp_models.append(model)
 
-        return sp_models
+        # load base (clean) model to evaluate ASR
+        if config["logger"]["weights"]["only_state_dict"]:
+            with open(f"{config["checkpoint"]["root"]}/{config["checkpoint"]["clean_model_dict"].format(i+1)}") as f:
+                clean_base_model_dict = json.load(f)
+            clean_base_model_dict["weights"] = (
+                f"{config["checkpoint"]["root"]}/{config["checkpoint"]["clean_model_weight"]}"
+            )
+
+            clean_model_cls = getattr(
+                self._import_package(f"{config["model"]["root"]}.{clean_base_model_dict["file"]}"),
+                clean_base_model_dict["class"],
+            )
+
+            # initialize the model
+            clean_model = clean_model_cls(
+                arch=clean_base_model_dict["arch"],
+                in_channels=config["dataset"]["image_shape"][0],
+                num_classes=config["dataset"]["num_classes"],
+                weights=clean_base_model_dict["weights"],
+                device=config["misc"]["device"],
+                verbose=config["misc"]["verbose"],
+            )
+        else:
+            clean_model = torch.load(
+                f"{config["checkpoint"]["root"]}/{config["checkpoint"]["clean_model_weight"]}",
+                map_location="cpu",
+            )
+
+        for param in clean_model.parameters():
+            param.requires_grad = False
+
+        clean_model.eval()
+
+        return clean_model, sp_models
 
     def _train_and_validate(
         self,
@@ -731,7 +767,8 @@ class MultiAttackRoutine(BaseRoutine):
     def _analyze_cross_test(
         self,
         test_sets_asr: list[Dataset],
-        models: list[nn.Module],
+        sp_models: list[nn.Module],
+        clean_base_model: nn.Module,
     ) -> None:
         """
         Perform cross-testing to evaluate model robustness across poisoned datasets.
@@ -747,49 +784,71 @@ class MultiAttackRoutine(BaseRoutine):
         Returns:
             None
         """
-        asr_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
-        cda_metrics = torch.zeros(size=(len(models), len(test_sets_asr)))
+        asr_metrics = torch.zeros(size=(len(sp_models), len(test_sets_asr)))
+        cda_metrics = torch.zeros(size=(len(sp_models), len(test_sets_asr)))
+        base_asr_metrics = torch.zeros(size=(1, len(test_sets_asr)))
+        base_cda_metrics = torch.zeros(size=(1, len(test_sets_asr)))
 
-        for i, model in enumerate(models):
+        for j, test_set_asr in enumerate(test_sets_asr):
+            test_loader_asr = DataLoader(test_set_asr, batch_size=config["test"]["test_batch_size"], shuffle=False)
 
-            model.eval()
-            for j, test_set_asr in enumerate(test_sets_asr):
-
-                # normalize (standardize) samples if needed
-                # transform orders: [base_transforms - poison_transforms - v2.Normalize]
-                if config["dataset"]["normalize"]:
-                    if isinstance(test_set_asr.clean_transform.transforms[-1], v2.Normalize):
-                        del test_set_asr.clean_transform.transforms[-1]
-                        del test_set_asr.poison_transform.transforms[-1]
-
-                    test_set_asr.clean_transform.transforms.append(
-                        v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i])
-                    )
-                    test_set_asr.poison_transform.transforms.append(
-                        v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i])
-                    )
-
-                test_loader_asr = DataLoader(test_set_asr, batch_size=config["test"]["test_batch_size"], shuffle=False)
+            for i, sp_model in enumerate(sp_models):
+                sp_model.eval()
                 test_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
                 test_cda_metric = CleanDataAccuracy().to(config["misc"]["device"])
 
+                # normalize (standardize) samples if needed
+                # transform orders: [base_transforms - poison_transforms - v2.Normalize]
+                # if config["dataset"]["normalize"]:
+                #     # remove any existing normalization
+                #     if isinstance(test_set_asr.clean_transform.transforms[-1], v2.Normalize):
+                #         del test_set_asr.clean_transform.transforms[-1]
+                #         del test_set_asr.poison_transform.transforms[-1]
+
+                #     test_set_asr.clean_transform.transforms.append(
+                #         v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i])
+                #     )
+                #     test_set_asr.poison_transform.transforms.append(
+                #         v2.Normalize(mean=self.mean_per_sp[i], std=self.std_per_sp[i])
+                #     )
+
                 with torch.no_grad():
                     for x_asr, y_asr_true, poisoned_mask, y_raw in test_loader_asr:
-                        # move data to <device>
-                        x_asr, y_asr_true = x_asr.to(config["misc"]["device"]), y_asr_true.to(config["misc"]["device"])
+                        x_asr = x_asr.to(config["misc"]["device"])
+                        y_asr_true = y_asr_true.to(config["misc"]["device"])
                         y_raw = y_raw.to(config["misc"]["device"])
 
-                        # forward pass
-                        y_asr_pred = model(x_asr)
+                        y_asr_pred = sp_model(x_asr)
                         test_asr_metric.update(y_asr_pred, poisoned_mask)
                         test_cda_metric.update(y_asr_pred, y_raw, poisoned_mask)
 
-                # calculate and store metrics
                 test_asr = test_asr_metric.compute().item()
                 test_cda = test_cda_metric.compute().item()
 
                 asr_metrics[i, j] = test_asr
                 cda_metrics[i, j] = test_cda
+
+            # base (clean) model ASR and R-ACC
+            base_test_asr_metric = AttackSuccessRate(config["dataset"]["target_index"]).to(config["misc"]["device"])
+            base_test_cda_metric = CleanDataAccuracy().to(config["misc"]["device"])
+
+            with torch.no_grad():
+                for x_asr, y_asr_true, poisoned_mask, y_raw in test_loader_asr:
+                    x_asr = x_asr.to(config["misc"]["device"])
+                    y_asr_true = y_asr_true.to(config["misc"]["device"])
+                    y_raw = y_raw.to(config["misc"]["device"])
+
+                    y_asr_pred = clean_base_model(x_asr)
+                    base_test_asr_metric.update(y_asr_pred, poisoned_mask)
+                    base_test_cda_metric.update(y_asr_pred, y_raw, poisoned_mask)
+
+            test_asr = base_test_asr_metric.compute().item()
+            test_cda = base_test_cda_metric.compute().item()
+
+            base_asr_metrics[0, j] = test_asr
+            base_cda_metrics[0, j] = test_cda
+
+            # base (clean) model R-ACC
 
         logger.save_labeled_matrix(
             path=Path(""),  # Empty path or specify your desired directory here
@@ -800,9 +859,23 @@ class MultiAttackRoutine(BaseRoutine):
         )
         logger.save_labeled_matrix(
             path=Path(""),  # Empty path or specify your desired directory here
-            filename="cross_test_cda_on_poisoned_dataset",  # File name
+            filename="cross_test_racc_on_poisoned_dataset",  # File name
             matrix=cda_metrics,  # Metrics to log
             row0_col0_title="sp_model/sp_dataset",  # Title for the top-left header cell
+            row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
+        )
+        logger.save_labeled_matrix(
+            path=Path(""),  # Empty path or specify your desired directory here
+            filename="clean_base_model_cross_test_asr_on_poisoned_dataset",  # File name
+            matrix=base_asr_metrics,  # Metrics to log
+            row0_col0_title="clean_base_model/sp_dataset",  # Title for the top-left header cell
+            row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
+        )
+        logger.save_labeled_matrix(
+            path=Path(""),  # Empty path or specify your desired directory here
+            filename="clean_base_model_cross_test_racc_on_poisoned_dataset",  # File name
+            matrix=base_cda_metrics,  # Metrics to log
+            row0_col0_title="clean_base_model/sp_dataset",  # Title for the top-left header cell
             row_labels=list(range(1, config["dataset"]["num_subsets"] + 1)),  # Subset labels
         )
 
