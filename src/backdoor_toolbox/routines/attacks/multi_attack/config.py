@@ -18,6 +18,12 @@ config = {
             "class": "MNIST",
         },
     },
+    "checkpoint": {
+        "root": "./logs/neutral/MNIST/2025-07-02-07-12-23",  # also update in config["logger"]["sub_root"]
+        "clean_model_dict": "model/config.json",
+        "clean_model_weight": "model/weights/model_epoch_15.pth",
+        "hyperparameters": "train/hyperparameters.json",
+    },
     "dataset": {
         "num_subsets": 7,
         "extract_finetune_subset": True,
@@ -41,18 +47,20 @@ config = {
         "triggers_cls": (
             TriggerTypes.SOLID.value,
             TriggerTypes.PATTERN.value,
-            TriggerTypes.NOISE.value,
             TriggerTypes.BLEND.value,
+            TriggerTypes.NOISE.value,
         ),
         "blend": {
             "bg_paths": [
-                r"./assets/blend_trigger/noise.jpg",
-                r"./assets/blend_trigger/kitty.jpg",
-                r"./assets/blend_trigger/pattern.jpg",
-                r"./assets/blend_trigger/creeper.jpg",
+                # r"./assets/blend_trigger/noise.jpg",
                 r"./assets/blend_trigger/chess.jpg",
+                # r"./assets/blend_trigger/pattern.jpg",
+                r"./assets/blend_trigger/kitty.jpg",
+                r"./assets/blend_trigger/creeper.jpg",
             ],
         },
+        "num_similarity": 0,
+        "similarity_ratio": 0,
     },
     # check ./models/ for available models
     "model": {
@@ -66,7 +74,6 @@ config = {
                 "archs": ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"],
                 "weights": None,
             },
-            # "vggnet": {},
         },
         "else": {
             "file": "resnet_wrapper",
@@ -92,6 +99,7 @@ config = {
     },
     "logger": {
         "root": "./logs/attack/multi_attack",
+        "sub_root": "MNIST/2025-07-02-07-12-23",
         "config": {
             "src_path": "src/backdoor_toolbox/routines/attacks/multi_attack",
             "dst_path": "",

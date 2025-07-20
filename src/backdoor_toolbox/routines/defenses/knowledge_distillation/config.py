@@ -22,7 +22,7 @@ config = {
         },
     },
     "checkpoint": {
-        "root": "./logs/attack/multi_attack/2025-06-15-06-02-40",  # also update in config["logger"]["sub_root"]
+        "root": "./logs/attack/multi_attack/MNIST/2025-07-02-07-12-23/2025-07-14-23-19-53",  # also update in config["logger"]["sub_root"]
         "model_dict": "sp{0}/model/config.json",
         "model_weight": "sp{0}/model/weights/model_epoch_15.pth",
         "hyperparameters": "sp{0}/train/hyperparameters.json",
@@ -66,25 +66,27 @@ config = {
         "poison_target_transform": v2.Compose([TargetTriggerTypes.FLIPLABEL.value(__config["target_index"])]),
         "target_index": __config["target_index"],
         "victim_indices": (1, 2, 3, 4, 5, 6, 7, 8, 9),
-        "normalize": False,  # whether to use v2.Normalize() or not [current implementation is inconsistentwith normalization!]
+        "normalize": False,  # whether to use v2.Normalize() or not [current implementation is inconsistent with normalization!]
         "num_classes": 10,
     },
     "trigger": {
         "triggers_cls": (
             TriggerTypes.SOLID.value,
             TriggerTypes.PATTERN.value,
-            TriggerTypes.NOISE.value,
             TriggerTypes.BLEND.value,
+            TriggerTypes.NOISE.value,
         ),
         "blend": {
             "bg_paths": [
-                r"./assets/blend_trigger/noise.jpg",
-                r"./assets/blend_trigger/kitty.jpg",
-                r"./assets/blend_trigger/pattern.jpg",
-                r"./assets/blend_trigger/creeper.jpg",
+                # r"./assets/blend_trigger/noise.jpg",
                 r"./assets/blend_trigger/chess.jpg",
+                # r"./assets/blend_trigger/pattern.jpg",
+                r"./assets/blend_trigger/kitty.jpg",
+                r"./assets/blend_trigger/creeper.jpg",
             ],
         },
+        "num_similarity": 0,
+        "similarity_ratio": 0,
     },
     "train": {
         "train_val_ratio": (0.8, 0.2),  # (train, validation) split
@@ -99,11 +101,19 @@ config = {
     },
     "logger": {
         "root": "./logs/defense/knowledge_distillation",
-        "sub_root": "2025-06-15-06-02-40",
+        "sub_root": "MNIST/2025-07-14-23-19-53",
         "config": {
             "src_path": "src/backdoor_toolbox/routines/defenses/ensemble_learning",
             "dst_path": "",
             "filename": "config",
+        },
+        "trigger": {
+            "path": "trigger/sp{}",
+            "filename": "pattern_demo",
+            "bg_color": 0.0,
+            "n_samples": 16,  # if using the dataset to generate samples
+            "clamp": False,
+            "show": False,
         },
         "hyperparameters": {
             "path": "stage{0}/train",
