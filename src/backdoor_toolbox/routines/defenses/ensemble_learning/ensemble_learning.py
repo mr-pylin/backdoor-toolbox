@@ -119,6 +119,8 @@ class EnsembleLearningRoutine(BaseRoutine):
             num_triggers=config["dataset"]["num_subsets"],
             blend_images=blend_images,
             seed=config["misc"]["seed"],
+            num_similarity=config["trigger"]["num_similarity"],
+            similarity_ratio=config["trigger"]["similarity_ratio"],
         )
         triggers = trigger_selector.get_triggers()
 
@@ -154,6 +156,19 @@ class EnsembleLearningRoutine(BaseRoutine):
                 poison_transform.transforms.append(v2.Normalize(train_set_mean, train_set_std))
 
             test_sets_asr.append(poisoned_testset)
+
+            # save trigger face as an image [debug]
+            logger.save_trigger_pattern(
+                path=config["logger"]["trigger"]["path"].format(i + 1),
+                filename=config["logger"]["trigger"]["filename"],
+                trigger_policy=trigger,
+                bg_size=config["dataset"]["image_shape"],
+                bg_color=config["logger"]["trigger"]["bg_color"],
+                dataset=test_set_cda,
+                n_samples=config["logger"]["trigger"]["n_samples"],
+                clamp=config["logger"]["trigger"]["clamp"],
+                show=config["logger"]["trigger"]["show"],
+            )
 
         return test_sets_asr, test_set_cda
 
