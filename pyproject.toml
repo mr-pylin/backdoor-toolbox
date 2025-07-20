@@ -19,6 +19,7 @@ numpy = "^2.2.1"
 scikit-learn = "^1.6.0"
 torch = { version = "2.5.1+cu124", source = "pytorch" }
 torchaudio = { version = "2.5.1+cu124", source = "pytorch" }
+torchinfo = "^1.8.0"
 torchmetrics = "^1.6.1"
 torchvision = { version = "0.20.1+cu124", source = "pytorch" }
 

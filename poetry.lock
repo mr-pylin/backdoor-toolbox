@@ -1128,6 +1128,17 @@ url = "https://download.pytorch.org/whl/cu124"
 reference = "pytorch"
 
 [[package]]
+name = "torchinfo"
+version = "1.8.0"
+description = "Model summary in PyTorch, based off of the original torchsummary."
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "torchinfo-1.8.0-py3-none-any.whl", hash = "sha256:2e911c2918603f945c26ff21a3a838d12709223dc4ccf243407bce8b6e897b46"},
+    {file = "torchinfo-1.8.0.tar.gz", hash = "sha256:72e94b0e9a3e64dc583a8e5b7940b8938a1ac0f033f795457f27e6f4e7afa2e9"},
+]
+
+[[package]]
 name = "torchmetrics"
 version = "1.7.1"
 description = "PyTorch native Metrics"
@@ -1223,4 +1234,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "3.12.8"
-content-hash = "fe054e3fafa5db19bf1bf2fe3c3377e8ad448c82215e919500fe31a43ed2fba3"
+content-hash = "e1fe9967dce547d576ff9297d3feafe44ed715c5ef6c3f7dee1cef1eaa9cc312"
